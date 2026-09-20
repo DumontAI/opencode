@@ -23,6 +23,7 @@ import {
   PromiseObj,
   set,
   coerceToString,
+  type Value,
 } from "../interpreter/objects.js"
 import { containsOpaqueReference, describeValue, rejectCircularInsertion } from "../interpreter/references.js"
 import { invoke, preserveConsumerError } from "../interpreter/callback.js"
@@ -31,7 +32,7 @@ import { ToolReference } from "../tool-runtime.js"
 import { groupBy } from "./collections.js"
 
 // ToObject for enumeration.
-export const enumerableSource = <R>(ctx: Interpreter<R>, label: string, value: unknown, node?: AstNode): Obj => {
+export const enumerableSource = <R>(ctx: Interpreter<R>, label: string, value: Value, node?: AstNode): Obj => {
   if (value === null || value === undefined) {
     throw typeError(`${label} cannot convert ${describeValue(value)} to an object.`, node)
   }
@@ -49,7 +50,7 @@ export const enumerableSource = <R>(ctx: Interpreter<R>, label: string, value: u
   return new Obj(ctx.builtins.Object)
 }
 
-export const objectAssign = <R>(ctx: Interpreter<R>, args: Array<unknown>): unknown => {
+export const objectAssign = <R>(ctx: Interpreter<R>, args: Array<Value>): Value => {
   const target = args[0]
   // JS would box a primitive target; wrappers and primitives cannot hold fields here.
   if (!(target instanceof Obj)) {
@@ -70,7 +71,7 @@ export const objectAssign = <R>(ctx: Interpreter<R>, args: Array<unknown>): unkn
   return target
 }
 
-const objectFromEntries = <R>(ctx: Interpreter<R>, source: unknown): Effect.Effect<Obj, unknown, R> => {
+const objectFromEntries = <R>(ctx: Interpreter<R>, source: Value): Effect.Effect<Obj, unknown, R> => {
   const out = new Obj(ctx.builtins.Object)
   return Effect.gen(function* () {
     const cursor = yield* ctx.iterate(source)
@@ -93,7 +94,7 @@ const objectFromEntries = <R>(ctx: Interpreter<R>, source: unknown): Effect.Effe
   })
 }
 
-const classTag = (value: unknown): string => {
+const classTag = (value: Value): string => {
   if (value === null) return "Null"
   if (value === undefined) return "Undefined"
   if (value instanceof Obj) return value.tag
@@ -103,14 +104,14 @@ const classTag = (value: unknown): string => {
   return "Object"
 }
 
-const propertyKey = (value: unknown): PropertyKey =>
+const propertyKey = (value: Value): PropertyKey =>
   value === AsyncIteratorSymbol || value === IteratorSymbol ? value : coerceToString(value)
 
 // Object constructs identically with or without new, like JS. Only `keys` copies its result into the
 // program; `values`, `entries`, `assign`, and `fromEntries` hand back the program's own values.
 export const objectGlobal = <R>(ctx: Interpreter<R>) => {
   const builtins = ctx.builtins
-  const construct = (args: Array<unknown>): unknown => {
+  const construct = (args: Array<Value>): Value => {
     const first = args[0]
     if (first === null || first === undefined) return new Obj(builtins.Object)
     if (first instanceof Obj) return first

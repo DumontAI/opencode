@@ -1,13 +1,13 @@
 import { fn } from "../interpreter/native.js"
 import { typeError } from "../interpreter/model.js"
-import { coerceToNumber, coerceToString, type Native } from "../interpreter/objects.js"
+import { coerceToNumber, coerceToString, type Native, type Value } from "../interpreter/objects.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
 
 export const compoundOperators = new Set(["+=", "-=", "*=", "/=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>=", ">>>="])
 
 export type Coercion = "Number" | "String" | "Boolean" | "parseInt" | "parseFloat" | "isFinite" | "isNaN"
 
-const coerce = <R>(ctx: Interpreter<R>, name: Coercion, args: Array<unknown>): unknown => {
+const coerce = <R>(ctx: Interpreter<R>, name: Coercion, args: Array<Value>): Value => {
   // Native: Number() is 0 and String() is "", unlike their undefined-argument forms; the
   // other coercers match native through the undefined-argument path below.
   if (args.length === 0) {

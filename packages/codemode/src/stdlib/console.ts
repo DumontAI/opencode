@@ -1,5 +1,5 @@
 import { type Method, methods } from "../interpreter/native.js"
-import { entries, get, Arr, Obj } from "../interpreter/objects.js"
+import { entries, get, Arr, Obj, type Value } from "../interpreter/objects.js"
 import { ToolReference } from "../tool-runtime.js"
 import { containsOpaqueReference } from "../interpreter/references.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
@@ -29,7 +29,7 @@ export const consoleGlobal = <R>(ctx: Interpreter<R>) => {
 
 const MAX_CONSOLE_DEPTH = 32
 
-const formatConsoleMessage = (name: string, args: Array<unknown>): string => {
+const formatConsoleMessage = (name: string, args: Array<Value>): string => {
   if (name === "dir") return args.length === 0 ? "undefined" : formatValue(args[0])
   if (name === "table") return formatConsoleTable(args[0], args[1])
   const prefix = name === "warn" ? "[warn] " : name === "error" ? "[error] " : name === "debug" ? "[debug] " : ""
@@ -37,13 +37,13 @@ const formatConsoleMessage = (name: string, args: Array<unknown>): string => {
 }
 
 /** One value as `console.log` shows it. */
-export const formatValue = (value: unknown): string => {
+export const formatValue = (value: Value): string => {
   if (value === undefined) return "undefined"
   if (typeof value === "string") return value
   return formatConsoleValue(value, new Set(), 0)
 }
 
-const formatConsoleValue = (value: unknown, seen: Set<object>, depth: number): string => {
+const formatConsoleValue = (value: Value, seen: Set<object>, depth: number): string => {
   if (value === null || value === undefined) return "null"
   if (typeof value === "string") return JSON.stringify(value)
   if (!(value instanceof Obj)) return value instanceof ToolReference ? "[opaque reference]" : String(value)
@@ -57,7 +57,7 @@ const formatConsoleValue = (value: unknown, seen: Set<object>, depth: number): s
   }
 }
 
-const formatConsoleTable = (value: unknown, columnsArgument: unknown): string => {
+const formatConsoleTable = (value: Value, columnsArgument: Value): string => {
   if (value === undefined) return "undefined"
   if (containsOpaqueReference(value)) return "[opaque reference]"
   const columns = columnsArgument instanceof Arr ? columnsArgument.items.map(String) : undefined
@@ -71,9 +71,9 @@ const formatConsoleTable = (value: unknown, columnsArgument: unknown): string =>
 }
 
 const consoleTableRows = (
-  data: unknown,
+  data: Value,
   columns: ReadonlyArray<string> | undefined,
-): Array<{ readonly index: string; readonly values: Record<string, unknown> }> => {
+): Array<{ readonly index: string; readonly values: Record<string, Value> }> => {
   if (data instanceof Arr) {
     return data.items.map((item, index) => ({ index: String(index), values: consoleTableValues(item, columns) }))
   }
@@ -83,7 +83,7 @@ const consoleTableRows = (
   return [{ index: "0", values: { Value: data } }]
 }
 
-const consoleTableValues = (value: unknown, columns: ReadonlyArray<string> | undefined): Record<string, unknown> => {
+const consoleTableValues = (value: Value, columns: ReadonlyArray<string> | undefined): Record<string, Value> => {
   if (value instanceof Obj && !(value instanceof Arr)) {
     if (columns !== undefined) return Object.fromEntries(columns.map((column) => [column, get(value, column)]))
     return Object.fromEntries(entries(value))
@@ -91,7 +91,7 @@ const consoleTableValues = (value: unknown, columns: ReadonlyArray<string> | und
   return { Value: value }
 }
 
-const formatConsoleTableCell = (value: unknown): string => {
+const formatConsoleTableCell = (value: Value): string => {
   if (value === undefined) return ""
   if (typeof value === "string") return value
   return formatConsoleValue(value, new Set(), 0)

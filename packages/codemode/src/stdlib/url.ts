@@ -14,6 +14,7 @@ import {
   URLSearchParamsObj,
   coerceToString,
   isRuntimeReference,
+  type Value,
 } from "../interpreter/objects.js"
 import { applyCollectionCallback, preserveConsumerError } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
@@ -51,12 +52,12 @@ export const uriGlobal = <R>(ctx: Interpreter<R>, name: UriFunction) =>
     }
   })
 
-const urlArgument = (value: unknown): string => (value instanceof URLObj ? value.url.href : coerceToString(value))
+const urlArgument = (value: Value): string => (value instanceof URLObj ? value.url.href : coerceToString(value))
 
 export const urlGlobal = <R>(ctx: Interpreter<R>) => {
   const builtins = ctx.builtins
   const proto = builtins.URL
-  const construct = (args: Array<unknown>, into: Obj): URLObj => {
+  const construct = (args: Array<Value>, into: Obj): URLObj => {
     if (args.length === 0) {
       throw typeError("new URL(...) requires a URL string and an optional base URL.")
     }
@@ -91,7 +92,7 @@ export const urlGlobal = <R>(ctx: Interpreter<R>) => {
   ]
   methods(builtins, url, [parse("canParse"), parse("parse")])
 
-  const self = (thisValue: unknown, name: string) => receiver(URLObj, thisValue, `URL.prototype.${name}`)
+  const self = (thisValue: Value, name: string) => receiver(URLObj, thisValue, `URL.prototype.${name}`)
   for (const name of urlProperties) {
     defineAccessor(
       proto,
@@ -118,7 +119,7 @@ export const urlGlobal = <R>(ctx: Interpreter<R>) => {
   return url
 }
 
-const readPair = <R>(ctx: Interpreter<R>, value: unknown, label: string): Effect.Effect<Array<string>, unknown, R> =>
+const readPair = <R>(ctx: Interpreter<R>, value: Value, label: string): Effect.Effect<Array<string>, unknown, R> =>
   Effect.gen(function* () {
     const cursor = yield* ctx.iterate(value)
     if (cursor === undefined) throw typeError(`${label} expects iterable [name, value] pairs.`)
@@ -141,7 +142,7 @@ const readPair = <R>(ctx: Interpreter<R>, value: unknown, label: string): Effect
  */
 export const readPairs = <R>(
   ctx: Interpreter<R>,
-  init: unknown,
+  init: Value,
   label: string,
 ): Effect.Effect<Array<[string, string]> | undefined, unknown, R> =>
   Effect.gen(function* () {
@@ -160,7 +161,7 @@ export const readPairs = <R>(
 
 const constructURLSearchParams = <R>(
   ctx: Interpreter<R>,
-  init: unknown,
+  init: Value,
   proto: Obj,
 ): Effect.Effect<URLSearchParamsObj, unknown, R> => {
   const wrap = (params: URLSearchParams) => new URLSearchParamsObj(proto, params)
@@ -195,11 +196,11 @@ export const urlSearchParamsGlobal = <R>(ctx: Interpreter<R>) => {
     call: requiresNew("URLSearchParams"),
     construct: (args, newTarget) => constructURLSearchParams(ctx, args[0], prototypeFrom(newTarget, proto)),
   })
-  const self = (thisValue: unknown, name: string) =>
+  const self = (thisValue: Value, name: string) =>
     receiver(URLSearchParamsObj, thisValue, `URLSearchParams.prototype.${name}`)
-  const wrap = (items: Array<unknown>) => new Arr(builtins.Array, items)
-  const arg = (args: Array<unknown>, index: number): string => coerceToString(args[index])
-  const requireArgs = (name: string, args: Array<unknown>, count: number): void => {
+  const wrap = (items: Array<Value>) => new Arr(builtins.Array, items)
+  const arg = (args: Array<Value>, index: number): string => coerceToString(args[index])
+  const requireArgs = (name: string, args: Array<Value>, count: number): void => {
     if (args.length < count) {
       throw typeError(`URLSearchParams.${name} requires ${count} argument${count === 1 ? "" : "s"}.`)
     }

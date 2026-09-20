@@ -18,12 +18,12 @@ export type Attributes = {
   readonly configurable: boolean
 }
 
-export type Getter = (receiver: unknown) => unknown
-export type Setter = (receiver: unknown, value: unknown) => void
+export type Getter = (receiver: Value) => Value
+export type Setter = (receiver: Value, value: Value) => void
 
 /** One own property: a data slot or a native accessor pair. */
 export type Slot =
-  | { value: unknown; writable: boolean; enumerable: boolean; configurable: boolean }
+  | { value: Value; writable: boolean; enumerable: boolean; configurable: boolean }
   | { get: Getter | undefined; set: Setter | undefined; enumerable: boolean; configurable: boolean }
 
 /** Ordinary assignment: writable, enumerable, configurable. */
@@ -68,14 +68,14 @@ export class Obj {
   }
 
   /** How `console.log` shows the value; `item` formats a child with cycle and depth tracking. */
-  inspect(item: (value: unknown) => string): string {
+  inspect(item: (value: Value) => string): string {
     return `{${entries(this)
       .map(([key, value]) => `${JSON.stringify(key)}:${item(value)}`)
       .join(",")}}`
   }
 
   /** A copy the host can hold; `item` converts a child. A `__proto__` key never reaches host code. */
-  toHost(item: (value: unknown) => unknown): unknown {
+  toHost(item: (value: Value) => unknown): unknown {
     return Object.fromEntries(
       entries(this)
         .filter(([key]) => key !== "__proto__")
@@ -84,7 +84,7 @@ export class Obj {
   }
 
   /** The built-in iteration `for...of` and spread use, when this kind of object has one. */
-  iterator(builtins: Builtins): Iterator<unknown> | undefined {
+  iterator(builtins: Builtins): Iterator<Value, undefined> | undefined {
     return undefined
   }
 }
@@ -93,7 +93,7 @@ export class Arr extends Obj {
   override readonly tag = "Array"
   constructor(
     proto: Obj,
-    readonly items: Array<unknown> = [],
+    readonly items: Array<Value> = [],
   ) {
     super(proto)
   }
@@ -103,10 +103,10 @@ export class Arr extends Obj {
   override toString() {
     return this.items.map((item) => (item === null || item === undefined ? "" : coerceToString(item))).join(",")
   }
-  override inspect(item: (value: unknown) => string) {
+  override inspect(item: (value: Value) => string) {
     return `[${this.items.map(item).join(",")}]`
   }
-  override toHost(item: (value: unknown) => unknown) {
+  override toHost(item: (value: Value) => unknown) {
     return this.items.map(item)
   }
   override iterator() {
@@ -165,8 +165,8 @@ export class Fn extends Callable {
   }
 }
 
-export type NativeCall<R> = (thisValue: unknown, args: Array<unknown>) => Effect.Effect<unknown, unknown, R>
-export type NativeConstruct<R> = (args: Array<unknown>, newTarget: Callable) => Effect.Effect<unknown, unknown, R>
+export type NativeCall<R> = (thisValue: Value, args: Array<Value>) => Effect.Effect<Value, unknown, R>
+export type NativeConstruct<R> = (args: Array<Value>, newTarget: Callable) => Effect.Effect<Value, unknown, R>
 
 export type NativeOptions<R> = {
   readonly name: string
@@ -195,7 +195,7 @@ export class PromiseObj extends Opaque {
   override readonly tag = "Promise"
   constructor(
     proto: Obj,
-    readonly fiber: Fiber.Fiber<unknown, unknown>,
+    readonly fiber: Fiber.Fiber<Value, unknown>,
   ) {
     super(proto)
   }
@@ -212,7 +212,7 @@ export class GeneratorObj extends Opaque {
   constructor(
     proto: Obj,
     readonly asynchronous: boolean,
-    readonly request: (kind: GeneratorRequestKind, value: unknown) => Effect.Effect<unknown, unknown, unknown>,
+    readonly request: (kind: GeneratorRequestKind, value: Value) => Effect.Effect<Value, unknown, unknown>,
   ) {
     super(proto)
   }
@@ -226,7 +226,7 @@ export class IteratorObj extends Opaque {
   override readonly tag = "Iterator"
   constructor(
     proto: Obj,
-    readonly source: IteratorObject<unknown>,
+    readonly source: IteratorObject<Value, undefined>,
   ) {
     super(proto)
   }
@@ -240,7 +240,7 @@ export class IteratorObj extends Opaque {
 
 /** A built-in object around a host value: data-like, so it prints as itself and crosses to extensions as a copy. */
 export abstract class Wrapper extends Obj {
-  override inspect(_item: (value: unknown) => string) {
+  override inspect(item: (value: Value) => string) {
     return this.toString()
   }
 }
@@ -281,11 +281,11 @@ export class RegExpObj extends Wrapper {
 
 export class MapObj extends Wrapper {
   override readonly tag = "Map"
-  readonly map = new Map<unknown, unknown>()
-  override inspect(item: (value: unknown) => string) {
+  readonly map = new Map<Value, Value>()
+  override inspect(item: (value: Value) => string) {
     return `Map(${this.map.size}) [${[...this.map].map(([key, value]) => `[${item(key)},${item(value)}]`).join(",")}]`
   }
-  override toHost(item: (value: unknown) => unknown) {
+  override toHost(item: (value: Value) => unknown) {
     return new Map([...this.map].map(([key, value]) => [item(key), item(value)]))
   }
   override iterator(builtins: Builtins) {
@@ -295,11 +295,11 @@ export class MapObj extends Wrapper {
 
 export class SetObj extends Wrapper {
   override readonly tag = "Set"
-  readonly set = new Set<unknown>()
-  override inspect(item: (value: unknown) => string) {
+  readonly set = new Set<Value>()
+  override inspect(item: (value: Value) => string) {
     return `Set(${this.set.size}) [${[...this.set].map(item).join(",")}]`
   }
-  override toHost(item: (value: unknown) => unknown) {
+  override toHost(item: (value: Value) => unknown) {
     return new Set([...this.set].map(item))
   }
   override iterator() {
@@ -392,16 +392,16 @@ export class Bytes extends Wrapper {
 export type Value = string | number | boolean | null | undefined | symbol | Obj | ToolReference
 
 /** ToString without consulting program-defined methods. */
-export const coerceToString = (value: unknown): string => (value instanceof Obj ? value.toString() : String(value))
+export const coerceToString = (value: Value): string => (value instanceof Obj ? value.toString() : String(value))
 
 /** ToNumber without consulting program-defined methods; tool references are not numbers. */
-export const coerceToNumber = (value: unknown): number => {
+export const coerceToNumber = (value: Value): number => {
   if (value instanceof Obj) return value.toNumber()
   return value instanceof ToolReference ? Number.NaN : Number(value)
 }
 
 /** Values that cannot cross the data boundary: opaque machinery and host-backed wrappers. */
-export const isRuntimeReference = (value: unknown): boolean =>
+export const isRuntimeReference = (value: Value): boolean =>
   value instanceof Opaque || value instanceof Wrapper || value instanceof ToolReference
 
 const MAX_ARRAY_INDEX = 4_294_967_295
@@ -420,7 +420,7 @@ type Indexed = Arr | Bytes
 
 const isIndexed = (target: Obj): target is Indexed => target instanceof Arr || target instanceof Bytes
 
-const elements = (target: Indexed): Array<unknown> | Uint8Array => (target instanceof Arr ? target.items : target.bytes)
+const elements = (target: Indexed): Array<Value> | Uint8Array => (target instanceof Arr ? target.items : target.bytes)
 
 const index = (target: Obj, key: string | symbol): number | undefined =>
   isIndexed(target) && typeof key === "string" ? parseArrayIndex(key) : undefined
@@ -441,18 +441,18 @@ export const own = (target: Obj, key: PropertyKey): Slot | undefined => {
   return target.props.get(name)
 }
 
-const read = (slot: Slot, receiver: unknown): unknown =>
+const read = (slot: Slot, receiver: Value): Value =>
   "value" in slot ? slot.value : slot.get === undefined ? undefined : slot.get(receiver)
 
 export const hasOwn = (target: Obj, key: PropertyKey): boolean => own(target, key) !== undefined
 
-export const getOwn = (target: Obj, key: PropertyKey): unknown => {
+export const getOwn = (target: Obj, key: PropertyKey): Value => {
   const slot = own(target, key)
   return slot === undefined ? undefined : read(slot, target)
 }
 
 /** [[Get]]: walks the prototype chain; accessors see `receiver`, which is the primitive for wrapper prototypes. */
-export const get = (target: Obj, key: PropertyKey, receiver: unknown = target): unknown => {
+export const get = (target: Obj, key: PropertyKey, receiver: Value = target): Value => {
   for (let current: Obj | null = target; current !== null; current = current.proto) {
     const slot = own(current, key)
     if (slot !== undefined) return read(slot, receiver)
@@ -467,14 +467,14 @@ export const has = (target: Obj, key: PropertyKey): boolean => {
   return false
 }
 
-export const hasPrototype = (value: unknown, proto: Obj): boolean => {
+export const hasPrototype = (value: Value, proto: Obj): boolean => {
   for (let current = value instanceof Obj ? value.proto : null; current !== null; current = current.proto) {
     if (current === proto) return true
   }
   return false
 }
 
-const writeElement = (target: Indexed, name: string | symbol, value: unknown): boolean | undefined => {
+const writeElement = (target: Indexed, name: string | symbol, value: Value): boolean | undefined => {
   const at = index(target, name)
   if (at !== undefined) {
     if (target instanceof Bytes) target.bytes[at] = typeof value === "number" ? value : Number(value)
@@ -490,7 +490,7 @@ const writeElement = (target: Indexed, name: string | symbol, value: unknown): b
 }
 
 /** [[Set]]: an inherited setter or read-only property decides before an own data property is created. */
-export const set = (target: Obj, key: PropertyKey, value: unknown): boolean => {
+export const set = (target: Obj, key: PropertyKey, value: Value): boolean => {
   const name = canonical(key)
   for (let current: Obj | null = target; current !== null; current = current.proto) {
     const slot = own(current, name)
@@ -518,7 +518,7 @@ export const set = (target: Obj, key: PropertyKey, value: unknown): boolean => {
 }
 
 /** [[DefineOwnProperty]] for a data property, ignoring the chain. */
-export const define = (target: Obj, key: PropertyKey, value: unknown, attrs: Attributes = data): void => {
+export const define = (target: Obj, key: PropertyKey, value: Value, attrs: Attributes = data): void => {
   const name = canonical(key)
   if (isIndexed(target) && writeElement(target, name, value) !== undefined) return
   target.props.set(name, { value, ...attrs })
@@ -569,9 +569,9 @@ export const keys = (target: Obj): Array<string> =>
   ownKeys(target).filter((key): key is string => typeof key === "string" && enumerable(target, key))
 
 /** Own enumerable string entries: `Object.entries` and serialization. */
-export const entries = (target: Obj): Array<[string, unknown]> => keys(target).map((key) => [key, getOwn(target, key)])
+export const entries = (target: Obj): Array<[string, Value]> => keys(target).map((key) => [key, getOwn(target, key)])
 
-export const record = (proto: Obj, fields: Record<string, unknown>): Obj => {
+export const record = (proto: Obj, fields: Record<string, Value>): Obj => {
   const target = new Obj(proto)
   for (const [key, value] of Object.entries(fields)) define(target, key, value)
   return target

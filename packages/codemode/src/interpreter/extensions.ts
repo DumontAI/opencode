@@ -24,6 +24,7 @@ import {
   URLObj,
   URLSearchParamsObj,
   coerceToString,
+  type Value,
 } from "./objects.js"
 import { describeValue, isOpaque } from "./references.js"
 
@@ -35,10 +36,10 @@ import { describeValue, isOpaque } from "./references.js"
 export const extensionGlobals = <R>(
   ctx: Interpreter<R>,
   extensions: ReadonlyArray<Extension>,
-): ReadonlyArray<readonly [string, unknown]> => {
+): ReadonlyArray<readonly [string, Value]> => {
   const builtins = ctx.builtins
 
-  const toHost = (value: unknown, label: string, depth = 0, seen = new Set<object>()): unknown => {
+  const toHost = (value: Value, label: string, depth = 0, seen = new Set<object>()): unknown => {
     if (depth > MAX_VALUE_DEPTH) throw typeError(`${label} exceeds the maximum value depth of ${MAX_VALUE_DEPTH}.`)
     if (isPrimitive(value)) return value
     if (!(value instanceof Obj) || isOpaque(value)) {
@@ -46,7 +47,7 @@ export const extensionGlobals = <R>(
     }
     if (seen.has(value)) throw typeError(`${label} contains a circular value.`)
     seen.add(value)
-    const next = (item: unknown) => toHost(item, label, depth + 1, seen)
+    const next = (item: Value) => toHost(item, label, depth + 1, seen)
     if (value instanceof ErrorObj) {
       const name = coerceToString(get(value, "name"))
       const message = get(value, "message")
@@ -72,7 +73,7 @@ export const extensionGlobals = <R>(
     return copied
   }
 
-  const fromHost = (value: unknown, label: string, depth = 0, seen = new Set<object>()): unknown => {
+  const fromHost = (value: unknown, label: string, depth = 0, seen = new Set<object>()): Value => {
     if (depth > MAX_VALUE_DEPTH) throw typeError(`${label} exceeds the maximum value depth of ${MAX_VALUE_DEPTH}.`)
     if (isPrimitive(value)) return value
     if (typeof value === "function") return wrap(value, label)
@@ -171,7 +172,7 @@ export const extensionGlobals = <R>(
  */
 const uncrossed = new Set(["stack", "constructor", "toString", "__proto__"])
 const left = Symbol("left behind")
-const crossing = (convert: () => unknown): unknown => {
+const crossing = <T>(convert: () => T): T | typeof left => {
   try {
     return convert()
   } catch (reason) {
@@ -190,7 +191,7 @@ const hostErrors = new Map<string, ErrorConstructor>([
 ])
 
 // The primitives the interpreter operates on; symbols and BigInts are not among them.
-const isPrimitive = (value: unknown): boolean =>
+const isPrimitive = (value: unknown): value is string | number | boolean | null | undefined =>
   value === null ||
   value === undefined ||
   typeof value === "string" ||

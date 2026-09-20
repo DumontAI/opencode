@@ -12,6 +12,7 @@ import {
   Obj,
   coerceToString,
   isRuntimeReference,
+  type Value,
 } from "../interpreter/objects.js"
 import { applyCollectionCallback } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
@@ -26,7 +27,7 @@ const attempt = <T>(run: () => T): T => {
   }
 }
 
-const constructHeaders = <R>(ctx: Interpreter<R>, init: unknown, proto: Obj): Effect.Effect<HeadersObj, unknown, R> => {
+const constructHeaders = <R>(ctx: Interpreter<R>, init: Value, proto: Obj): Effect.Effect<HeadersObj, unknown, R> => {
   const wrap = (headers: Headers) => new HeadersObj(proto, headers)
   if (init === undefined) return Effect.succeed(wrap(new Headers()))
   return Effect.gen(function* () {
@@ -49,10 +50,10 @@ export const headersGlobal = <R>(ctx: Interpreter<R>) => {
     call: requiresNew("Headers"),
     construct: (args, newTarget) => constructHeaders(ctx, args[0], prototypeFrom(newTarget, proto)),
   })
-  const self = (thisValue: unknown, name: string) => receiver(HeadersObj, thisValue, `Headers.prototype.${name}`)
-  const wrap = (items: Array<unknown>) => new Arr(builtins.Array, items)
-  const arg = (args: Array<unknown>, index: number): string => coerceToString(args[index])
-  const requireArgs = (name: string, args: Array<unknown>, count: number): void => {
+  const self = (thisValue: Value, name: string) => receiver(HeadersObj, thisValue, `Headers.prototype.${name}`)
+  const wrap = (items: Array<Value>) => new Arr(builtins.Array, items)
+  const arg = (args: Array<Value>, index: number): string => coerceToString(args[index])
+  const requireArgs = (name: string, args: Array<Value>, count: number): void => {
     if (args.length < count) throw typeError(`Headers.${name} requires ${count} argument${count === 1 ? "" : "s"}.`)
   }
   methods(builtins, proto, [
@@ -62,7 +63,8 @@ export const headersGlobal = <R>(ctx: Interpreter<R>) => {
       (thisValue, args) => {
         requireArgs("append", args, 2)
         const target = self(thisValue, "append").headers
-        return attempt(() => target.append(arg(args, 0), arg(args, 1)))
+        attempt(() => target.append(arg(args, 0), arg(args, 1)))
+        return undefined
       },
     ],
     [
@@ -71,7 +73,8 @@ export const headersGlobal = <R>(ctx: Interpreter<R>) => {
       (thisValue, args) => {
         requireArgs("delete", args, 1)
         const target = self(thisValue, "delete").headers
-        return attempt(() => target.delete(arg(args, 0)))
+        attempt(() => target.delete(arg(args, 0)))
+        return undefined
       },
     ],
     [
@@ -99,7 +102,8 @@ export const headersGlobal = <R>(ctx: Interpreter<R>) => {
       (thisValue, args) => {
         requireArgs("set", args, 2)
         const target = self(thisValue, "set").headers
-        return attempt(() => target.set(arg(args, 0), arg(args, 1)))
+        attempt(() => target.set(arg(args, 0), arg(args, 1)))
+        return undefined
       },
     ],
     // Iterator.from because Bun's Headers typings predate iterator helpers; the runtime iterators already have them.
