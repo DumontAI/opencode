@@ -2,9 +2,17 @@ import { Effect } from "effect"
 import type { Builtins } from "../interpreter/intrinsics.js"
 import { constructor, type Method, methods, prototypeFrom, receiver } from "../interpreter/native.js"
 import { syntaxError, typeError } from "../interpreter/model.js"
-import { define, defineAccessor, Arr, Obj, RegExpObj, record } from "../interpreter/objects.js"
+import {
+  define,
+  defineAccessor,
+  Arr,
+  Obj,
+  RegExpObj,
+  record,
+  coerceToNumber,
+  coerceToString,
+} from "../interpreter/objects.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToNumber, coerceToString } from "./value.js"
 
 const flagProperties = [
   "hasIndices",

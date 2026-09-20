@@ -75,20 +75,15 @@ import {
   Native,
   parseArrayIndex,
   Arr,
-  Bytes,
-  DateObj,
   Fn,
   GeneratorObj,
-  IteratorObj,
-  MapObj,
   Obj,
   PromiseObj,
-  SetObj,
-  URLSearchParamsObj,
-  HeadersObj,
   record,
   remove,
   set,
+  coerceToNumber,
+  coerceToString,
 } from "./objects.js"
 import { preserveConsumerError } from "./callback.js"
 import { Pending, resolvePromise, resolvePromiseValue } from "./promises.js"
@@ -96,7 +91,7 @@ import { containsOpaqueReference, describeValue, rejectCircularInsertion, typeof
 import { ScopeStack } from "./scope.js"
 import { constructRegExp } from "../stdlib/regexp.js"
 import { enumerableSource } from "../stdlib/object.js"
-import { coerceToNumber, coerceToString, compoundOperators } from "../stdlib/value.js"
+import { compoundOperators } from "../stdlib/value.js"
 
 // What a loop does with its body's result: exit with a StatementResult, or undefined to keep iterating.
 // Unlabelled break ends this loop; a label the loop does not carry propagates outward.
@@ -660,7 +655,7 @@ class Frame<R> {
       const iterator = cursor === undefined ? yield* self.customIterator(right, node, awaiting) : undefined
       if (iterator === undefined && cursor === undefined) {
         throw invalidData(
-          `${awaiting ? "for await...of" : "for...of"} requires an array, string, Map, Set, URLSearchParams, or Headers, or custom iterator value.`,
+          `${awaiting ? "for await...of" : "for...of"} requires an iterable value, received ${describeValue(right)}.`,
           node,
         )
       }
@@ -767,32 +762,16 @@ class Frame<R> {
 
   private hostCursor(value: unknown) {
     const iterator =
-      value instanceof Arr
-        ? value.items[Symbol.iterator]()
-        : typeof value === "string"
-          ? value[Symbol.iterator]()
-          : value instanceof MapObj
-            ? value.map.entries()
-            : value instanceof SetObj
-              ? value.set.values()
-              : value instanceof URLSearchParamsObj
-                ? value.params.entries()
-                : value instanceof HeadersObj
-                  ? value.headers.entries()
-                  : value instanceof Bytes
-                    ? value.bytes.values()
-                    : value instanceof IteratorObj
-                      ? value.iterator
-                      : undefined
+      typeof value === "string"
+        ? value[Symbol.iterator]()
+        : value instanceof Obj
+          ? value.iterator(this.ctx.builtins)
+          : undefined
     if (iterator === undefined) return undefined
-    const proto = this.ctx.builtins.Array
     return {
       next: Effect.sync(() => {
         const step = iterator.next()
-        return {
-          done: Boolean(step.done),
-          value: Array.isArray(step.value) ? new Arr(proto, step.value) : step.value,
-        }
+        return { done: Boolean(step.done), value: step.value }
       }),
       close: Effect.void,
     }
@@ -1346,14 +1325,9 @@ class Frame<R> {
     if (containsOpaqueReference(lhs) || containsOpaqueReference(rhs)) {
       throw invalidData("Binary operators require data values.", node)
     }
-    // Null-prototype data needs explicit primitive coercion; identity and `in` retain raw objects.
-    // Dates use their default string hint for addition and loose equality, and epoch time elsewhere.
-    const coerceOperand = (operand: unknown): unknown => {
-      if (operand instanceof DateObj) {
-        return operator === "+" || operator === "==" || operator === "!=" ? coerceToString(operand) : operand.time
-      }
-      return operand !== null && typeof operand === "object" ? coerceToString(operand) : operand
-    }
+    // Addition and loose equality use the default hint; every other operator asks for a number.
+    const hint = operator === "+" || operator === "==" || operator === "!=" ? "default" : "number"
+    const coerceOperand = (operand: unknown): unknown => (operand instanceof Obj ? operand.toPrimitive(hint) : operand)
     const bothObjects = lhs !== null && typeof lhs === "object" && rhs !== null && typeof rhs === "object"
     const l = coerceOperand(lhs)
     const r = coerceOperand(rhs)
@@ -1433,12 +1407,7 @@ class Frame<R> {
       if (containsOpaqueReference(value)) {
         throw invalidData("Unary operators require data values.", node)
       }
-      const operand =
-        value instanceof DateObj
-          ? value.time
-          : value !== null && typeof value === "object"
-            ? coerceToString(value)
-            : value
+      const operand = value instanceof Obj ? value.toPrimitive("number") : value
       let result: unknown
       switch (operator) {
         case "+":
@@ -1857,17 +1826,8 @@ class Frame<R> {
   private delegateYield(value: unknown, node: AstNode): Effect.Effect<unknown, unknown, R> {
     const self = this
     return Effect.gen(function* () {
-      if (
-        value instanceof Arr ||
-        typeof value === "string" ||
-        value instanceof MapObj ||
-        value instanceof SetObj ||
-        value instanceof URLSearchParamsObj ||
-        value instanceof HeadersObj ||
-        value instanceof Bytes
-      ) {
-        const cursor = yield* self.iterate(value, node)
-        if (!cursor) throw typeError("Built-in iterator is unavailable.", node)
+      const cursor = self.hostCursor(value)
+      if (cursor !== undefined) {
         while (true) {
           const step = yield* cursor.next
           if (step.done) return undefined

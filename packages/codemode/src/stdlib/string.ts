@@ -2,12 +2,21 @@ import { Effect } from "effect"
 import { constructor, fn, type Method, methods } from "../interpreter/native.js"
 import { checkArrayLength, checkStringLength } from "../interpreter/limits.js"
 import { invalidData, IteratorSymbol, rangeError, typeError } from "../interpreter/model.js"
-import { define, hidden, Arr, IteratorObj, PromiseObj, RegExpObj, record } from "../interpreter/objects.js"
+import {
+  define,
+  hidden,
+  Arr,
+  IteratorObj,
+  RegExpObj,
+  record,
+  coerceToNumber,
+  coerceToString,
+} from "../interpreter/objects.js"
 import { containsOpaqueReference, typeofValue } from "../interpreter/references.js"
 import { applyCollectionCallback, isSupportedCallback } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
 import { matchToValue, toHostRegex } from "./regexp.js"
-import { coerceToNumber, coerceToString, coercion } from "./value.js"
+import { coercion } from "./value.js"
 
 // console is intercepted by the interpreter before reaching here.
 const requireDataArgument = (name: string, index: number, arg: unknown): unknown => {
@@ -63,10 +72,7 @@ const replaceWithCallback = <R>(
     let end = 0
     for (const match of matches) {
       const replacement = yield* apply(match.args)
-      output.push(
-        value.slice(end, match.offset),
-        replacement instanceof PromiseObj ? "[object Promise]" : coerceToString(replacement),
-      )
+      output.push(value.slice(end, match.offset), coerceToString(replacement))
       end = match.offset + match.match.length
     }
     output.push(value.slice(end))

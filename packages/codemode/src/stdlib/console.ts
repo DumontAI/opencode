@@ -1,22 +1,8 @@
 import { type Method, methods } from "../interpreter/native.js"
-import {
-  entries,
-  get,
-  Arr,
-  Bytes,
-  DateObj,
-  MapObj,
-  Obj,
-  PromiseObj,
-  RegExpObj,
-  SetObj,
-  URLObj,
-  URLSearchParamsObj,
-  HeadersObj,
-} from "../interpreter/objects.js"
-import { containsOpaqueReference, isRuntimeReference } from "../interpreter/references.js"
+import { entries, get, Arr, Obj } from "../interpreter/objects.js"
+import { ToolReference } from "../tool-runtime.js"
+import { containsOpaqueReference } from "../interpreter/references.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToString } from "./value.js"
 
 const consoleMethods = ["log", "info", "debug", "warn", "error", "dir", "table"]
 
@@ -60,49 +46,16 @@ export const formatValue = (value: unknown): string => {
 const formatConsoleValue = (value: unknown, seen: Set<object>, depth: number): string => {
   if (value === null || value === undefined) return "null"
   if (typeof value === "string") return JSON.stringify(value)
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  if (typeof value !== "object") return String(value)
-  if (value instanceof PromiseObj) return "[Promise (await it to get its value)]"
-  if (value instanceof DateObj) return coerceToString(value)
-  if (value instanceof RegExpObj) return coerceToString(value)
-  if (value instanceof URLObj) return coerceToString(value)
-  if (value instanceof URLSearchParamsObj) return coerceToString(value)
-  if (value instanceof HeadersObj) return `Headers ${JSON.stringify(Object.fromEntries(value.headers))}`
-  if (value instanceof Bytes) return `Uint8Array(${value.bytes.length}) [${value.bytes.join(",")}]`
+  if (!(value instanceof Obj)) return value instanceof ToolReference ? "[opaque reference]" : String(value)
   if (depth > MAX_CONSOLE_DEPTH) return "..."
   if (seen.has(value)) return "[Circular]"
-  if (value instanceof MapObj) {
-    seen.add(value)
-    try {
-      const items = Array.from(value.map.entries(), ([key, item]) => `[${formatItems([key, item], seen, depth + 1)}]`)
-      return `Map(${value.map.size}) [${items.join(",")}]`
-    } finally {
-      seen.delete(value)
-    }
-  }
-  if (value instanceof SetObj) {
-    seen.add(value)
-    try {
-      return `Set(${value.set.size}) [${formatItems([...value.set.values()], seen, depth + 1)}]`
-    } finally {
-      seen.delete(value)
-    }
-  }
-  if (isRuntimeReference(value)) return "[opaque reference]"
   seen.add(value)
   try {
-    if (value instanceof Arr) return `[${formatItems(value.items, seen, depth + 1)}]`
-    if (!(value instanceof Obj)) return "[object Object]"
-    return `{${entries(value)
-      .map(([key, item]) => `${JSON.stringify(key)}:${formatConsoleValue(item, seen, depth + 1)}`)
-      .join(",")}}`
+    return value.inspect((item) => formatConsoleValue(item, seen, depth + 1))
   } finally {
     seen.delete(value)
   }
 }
-
-const formatItems = (items: Array<unknown>, seen: Set<object>, depth: number): string =>
-  items.map((item) => formatConsoleValue(item, seen, depth)).join(",")
 
 const formatConsoleTable = (value: unknown, columnsArgument: unknown): string => {
   if (value === undefined) return "undefined"

@@ -1,5 +1,7 @@
 import type { BlockStatement, Expression, Pattern } from "acorn"
 import type { Effect, Fiber } from "effect"
+import { ToolReference } from "../tool-runtime.js"
+import type { Builtins } from "./intrinsics.js"
 import { checkArrayLength } from "./limits.js"
 import {
   AsyncIteratorSymbol,
@@ -33,32 +35,118 @@ export const readonly: Attributes = { writable: false, enumerable: false, config
 /** Constants such as `Math.PI` and a constructor's `prototype`. */
 export const frozen: Attributes = { writable: false, enumerable: false, configurable: false }
 
-/** An object owned by the program: own properties plus a prototype link. */
+/**
+ * An object owned by the program: own properties plus a prototype link. Subclasses answer, in one place, how a
+ * built-in kind of object prints, coerces, iterates, and crosses to the host.
+ */
 export class Obj {
   readonly props = new Map<string | symbol, Slot>()
   constructor(public proto: Obj | null) {}
+
+  /** The class name `Object.prototype.toString` reports: `[object Map]`. */
+  readonly tag: string = "Object"
+
+  /** How diagnostics refer to a value of this kind. */
+  get describe(): string {
+    if (this.tag === "Object") return "a data object"
+    return `${/^[AEIO]/.test(this.tag) ? "an" : "a"} ${this.tag}`
+  }
+
+  /** ToString without consulting program-defined methods. */
+  toString(): string {
+    return `[object ${this.tag}]`
+  }
+
+  /** ToPrimitive without consulting program-defined methods: only a Date answers a number hint differently. */
+  toPrimitive(hint: "default" | "number" | "string"): string | number {
+    return this.toString()
+  }
+
+  /** ToNumber without consulting program-defined methods. */
+  toNumber(): number {
+    return Number(this.toPrimitive("number"))
+  }
+
+  /** How `console.log` shows the value; `item` formats a child with cycle and depth tracking. */
+  inspect(item: (value: unknown) => string): string {
+    return `{${entries(this)
+      .map(([key, value]) => `${JSON.stringify(key)}:${item(value)}`)
+      .join(",")}}`
+  }
+
+  /** A copy the host can hold; `item` converts a child. A `__proto__` key never reaches host code. */
+  toHost(item: (value: unknown) => unknown): unknown {
+    return Object.fromEntries(
+      entries(this)
+        .filter(([key]) => key !== "__proto__")
+        .map(([key, value]) => [key, item(value)]),
+    )
+  }
+
+  /** The built-in iteration `for...of` and spread use, when this kind of object has one. */
+  iterator(builtins: Builtins): Iterator<unknown> | undefined {
+    return undefined
+  }
 }
 
 export class Arr extends Obj {
+  override readonly tag = "Array"
   constructor(
     proto: Obj,
     readonly items: Array<unknown> = [],
   ) {
     super(proto)
   }
+  override get describe() {
+    return "an array"
+  }
+  override toString() {
+    return this.items.map((item) => (item === null || item === undefined ? "" : coerceToString(item))).join(",")
+  }
+  override inspect(item: (value: unknown) => string) {
+    return `[${this.items.map(item).join(",")}]`
+  }
+  override toHost(item: (value: unknown) => unknown) {
+    return this.items.map(item)
+  }
+  override iterator() {
+    return this.items.values()
+  }
 }
 
 /** An object with the [[ErrorData]] slot: what `Error.prototype.toString` and the host boundary recognize as an error. */
 export class ErrorObj extends Obj {
+  override readonly tag = "Error"
   /** The interpreter failure this error materialized from, so rethrowing it keeps the diagnostic kind and location. */
   host?: PendingThrow
+  /** Error.prototype.toString: "name: message", or just one when the other is empty. */
+  override toString() {
+    const name = get(this, "name")
+    const message = get(this, "message")
+    const shownName = typeof name === "string" ? name : "Error"
+    const shownMessage = typeof message === "string" ? message : ""
+    if (shownMessage === "") return shownName
+    if (shownName === "") return shownMessage
+    return `${shownName}: ${shownMessage}`
+  }
 }
 
-export abstract class Callable extends Obj {
+/** Interpreter machinery a program can hold but never inspect, serialize, or hand to the host. */
+export abstract class Opaque extends Obj {
+  override inspect() {
+    return "[opaque reference]"
+  }
+}
+
+export abstract class Callable extends Opaque {
+  override readonly tag = "Function"
   constructor(proto: Obj, name: string, length: number) {
     super(proto)
     define(this, "length", length, readonly)
     define(this, "name", name, readonly)
+  }
+  override get describe() {
+    return "a function"
   }
 }
 
@@ -103,16 +191,24 @@ export class Native<R = never> extends Callable {
   }
 }
 
-export class PromiseObj extends Obj {
+export class PromiseObj extends Opaque {
+  override readonly tag = "Promise"
   constructor(
     proto: Obj,
     readonly fiber: Fiber.Fiber<unknown, unknown>,
   ) {
     super(proto)
   }
+  override get describe() {
+    return "an un-awaited Promise"
+  }
+  override inspect() {
+    return "[Promise (await it to get its value)]"
+  }
 }
 
-export class GeneratorObj extends Obj {
+export class GeneratorObj extends Opaque {
+  override readonly tag = "Generator"
   constructor(
     proto: Obj,
     readonly asynchronous: boolean,
@@ -120,62 +216,138 @@ export class GeneratorObj extends Obj {
   ) {
     super(proto)
   }
-}
-
-/** A built-in collection iterator: live over the host collection, yielding program values. */
-export class IteratorObj extends Obj {
-  constructor(
-    proto: Obj,
-    readonly iterator: IteratorObject<unknown>,
-  ) {
-    super(proto)
+  override get describe() {
+    return "a generator"
   }
 }
 
-export class DateObj extends Obj {
+/** A built-in collection iterator: live over the host collection, yielding program values. */
+export class IteratorObj extends Opaque {
+  override readonly tag = "Iterator"
+  constructor(
+    proto: Obj,
+    readonly source: IteratorObject<unknown>,
+  ) {
+    super(proto)
+  }
+  override get describe() {
+    return "an iterator"
+  }
+  override iterator() {
+    return this.source
+  }
+}
+
+/** A built-in object around a host value: data-like, so it prints as itself and crosses to extensions as a copy. */
+export abstract class Wrapper extends Obj {
+  override inspect(_item: (value: unknown) => string) {
+    return this.toString()
+  }
+}
+
+export class DateObj extends Wrapper {
+  override readonly tag = "Date"
   constructor(
     proto: Obj,
     public time: number,
   ) {
     super(proto)
   }
+  override toString() {
+    return Number.isFinite(this.time) ? new Date(this.time).toISOString() : "Invalid Date"
+  }
+  override toPrimitive(hint: "default" | "number" | "string") {
+    return hint === "number" ? this.time : this.toString()
+  }
+  override toHost() {
+    return new Date(this.time)
+  }
 }
 
-export class RegExpObj extends Obj {
+export class RegExpObj extends Wrapper {
+  override readonly tag = "RegExp"
   readonly regex: RegExp
   constructor(proto: Obj, pattern: string, flags: string) {
     super(proto)
     this.regex = new RegExp(pattern, flags)
   }
+  override toString() {
+    return `/${this.regex.source}/${this.regex.flags}`
+  }
+  override toHost() {
+    return new RegExp(this.regex.source, this.regex.flags)
+  }
 }
 
-export class MapObj extends Obj {
+export class MapObj extends Wrapper {
+  override readonly tag = "Map"
   readonly map = new Map<unknown, unknown>()
+  override inspect(item: (value: unknown) => string) {
+    return `Map(${this.map.size}) [${[...this.map].map(([key, value]) => `[${item(key)},${item(value)}]`).join(",")}]`
+  }
+  override toHost(item: (value: unknown) => unknown) {
+    return new Map([...this.map].map(([key, value]) => [item(key), item(value)]))
+  }
+  override iterator(builtins: Builtins) {
+    return this.map.entries().map((entry) => new Arr(builtins.Array, entry))
+  }
 }
 
-export class SetObj extends Obj {
+export class SetObj extends Wrapper {
+  override readonly tag = "Set"
   readonly set = new Set<unknown>()
+  override inspect(item: (value: unknown) => string) {
+    return `Set(${this.set.size}) [${[...this.set].map(item).join(",")}]`
+  }
+  override toHost(item: (value: unknown) => unknown) {
+    return new Set([...this.set].map(item))
+  }
+  override iterator() {
+    return this.set.values()
+  }
 }
 
-export class URLSearchParamsObj extends Obj {
+export class URLSearchParamsObj extends Wrapper {
+  override readonly tag = "URLSearchParams"
   constructor(
     proto: Obj,
     readonly params: URLSearchParams,
   ) {
     super(proto)
   }
+  override toString() {
+    return this.params.toString()
+  }
+  override toHost() {
+    return new URLSearchParams(this.params)
+  }
+  override iterator(builtins: Builtins) {
+    return this.params.entries().map((entry) => new Arr(builtins.Array, entry))
+  }
 }
 
-export class HeadersObj extends Obj {
+export class HeadersObj extends Wrapper {
+  override readonly tag = "Headers"
   constructor(
     proto: Obj,
     readonly headers: Headers,
   ) {
     super(proto)
   }
+  override inspect() {
+    return `Headers ${JSON.stringify(Object.fromEntries(this.headers))}`
+  }
+  override toHost() {
+    return new Headers(this.headers)
+  }
+  override iterator(builtins: Builtins) {
+    // Bun's Headers typings lack the iterator helpers, so the host iterator is lifted first.
+    return Iterator.from(this.headers.entries()).map((entry) => new Arr(builtins.Array, entry))
+  }
 }
 
-export class URLObj extends Obj {
+export class URLObj extends Wrapper {
+  override readonly tag = "URL"
   readonly searchParams: URLSearchParamsObj
   constructor(
     proto: Obj,
@@ -185,30 +357,52 @@ export class URLObj extends Obj {
     super(proto)
     this.searchParams = new URLSearchParamsObj(searchParamsProto, url.searchParams)
   }
+  override toString() {
+    return this.url.href
+  }
+  override toHost() {
+    return new URL(this.url.href)
+  }
 }
 
 /** A `Uint8Array`: the host array does the byte clamping and ignores out-of-range writes, as JS does. */
-export class Bytes extends Obj {
+export class Bytes extends Wrapper {
+  override readonly tag = "Uint8Array"
   constructor(
     proto: Obj,
     readonly bytes: Uint8Array,
   ) {
     super(proto)
   }
+  override toString() {
+    return this.bytes.join(",")
+  }
+  override inspect() {
+    return `Uint8Array(${this.bytes.length}) [${this.bytes.join(",")}]`
+  }
+  override toHost() {
+    return new Uint8Array(this.bytes)
+  }
+  override iterator() {
+    return this.bytes.values()
+  }
 }
 
-/** Built-in objects that wrap a host value; data-like, but never plain data. */
-export const isWrapper = (
-  value: unknown,
-): value is DateObj | RegExpObj | MapObj | SetObj | URLObj | URLSearchParamsObj | HeadersObj | Bytes =>
-  value instanceof DateObj ||
-  value instanceof RegExpObj ||
-  value instanceof MapObj ||
-  value instanceof SetObj ||
-  value instanceof URLObj ||
-  value instanceof URLSearchParamsObj ||
-  value instanceof HeadersObj ||
-  value instanceof Bytes
+/** Every value a program can hold. Host values never appear here; they are copied in at the boundaries. */
+export type Value = string | number | boolean | null | undefined | symbol | Obj | ToolReference
+
+/** ToString without consulting program-defined methods. */
+export const coerceToString = (value: unknown): string => (value instanceof Obj ? value.toString() : String(value))
+
+/** ToNumber without consulting program-defined methods; tool references are not numbers. */
+export const coerceToNumber = (value: unknown): number => {
+  if (value instanceof Obj) return value.toNumber()
+  return value instanceof ToolReference ? Number.NaN : Number(value)
+}
+
+/** Values that cannot cross the data boundary: opaque machinery and host-backed wrappers. */
+export const isRuntimeReference = (value: unknown): boolean =>
+  value instanceof Opaque || value instanceof Wrapper || value instanceof ToolReference
 
 const MAX_ARRAY_INDEX = 4_294_967_295
 

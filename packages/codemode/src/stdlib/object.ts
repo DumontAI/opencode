@@ -9,7 +9,6 @@ import {
   typeError,
 } from "../interpreter/model.js"
 import {
-  Callable,
   define,
   entries,
   enumerableKeys,
@@ -20,20 +19,16 @@ import {
   keys,
   own,
   Arr,
-  Bytes,
-  DateObj,
-  ErrorObj,
   Obj,
   PromiseObj,
-  RegExpObj,
   set,
+  coerceToString,
 } from "../interpreter/objects.js"
 import { containsOpaqueReference, describeValue, rejectCircularInsertion } from "../interpreter/references.js"
 import { invoke, preserveConsumerError } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
 import { ToolReference } from "../tool-runtime.js"
 import { groupBy } from "./collections.js"
-import { coerceToString } from "./value.js"
 
 // ToObject for enumeration.
 export const enumerableSource = <R>(ctx: Interpreter<R>, label: string, value: unknown, node?: AstNode): Obj => {
@@ -98,15 +93,10 @@ const objectFromEntries = <R>(ctx: Interpreter<R>, source: unknown): Effect.Effe
   })
 }
 
-export const classTag = (value: unknown): string => {
+const classTag = (value: unknown): string => {
   if (value === null) return "Null"
   if (value === undefined) return "Undefined"
-  if (value instanceof Arr) return "Array"
-  if (value instanceof Callable) return "Function"
-  if (value instanceof ErrorObj) return "Error"
-  if (value instanceof DateObj) return "Date"
-  if (value instanceof RegExpObj) return "RegExp"
-  if (value instanceof Bytes) return "Uint8Array"
+  if (value instanceof Obj) return value.tag
   if (typeof value === "string") return "String"
   if (typeof value === "number") return "Number"
   if (typeof value === "boolean") return "Boolean"

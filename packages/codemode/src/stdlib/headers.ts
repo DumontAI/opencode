@@ -1,11 +1,20 @@
 import { Effect } from "effect"
 import { constructor, methods, prototypeFrom, receiver, requiresNew } from "../interpreter/native.js"
 import { IteratorSymbol, typeError } from "../interpreter/model.js"
-import { define, entries, get, hidden, Arr, HeadersObj, IteratorObj, Obj } from "../interpreter/objects.js"
+import {
+  define,
+  entries,
+  get,
+  hidden,
+  Arr,
+  HeadersObj,
+  IteratorObj,
+  Obj,
+  coerceToString,
+  isRuntimeReference,
+} from "../interpreter/objects.js"
 import { applyCollectionCallback } from "../interpreter/callback.js"
-import { isRuntimeReference } from "../interpreter/references.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToString } from "./value.js"
 import { readPairs } from "./url.js"
 
 // The host validates header names and values and throws its own TypeError; the program gets one of its own.
@@ -104,15 +113,7 @@ export const headersGlobal = <R>(ctx: Interpreter<R>) => {
       0,
       (thisValue) => new IteratorObj(builtins.Iterator, Iterator.from(self(thisValue, "values").headers.values())),
     ],
-    [
-      "entries",
-      0,
-      (thisValue) =>
-        new IteratorObj(
-          builtins.Iterator,
-          Iterator.from(self(thisValue, "entries").headers.entries()).map(([key, value]) => wrap([key, value])),
-        ),
-    ],
+    ["entries", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "entries").iterator(builtins))],
     [
       "forEach",
       1,

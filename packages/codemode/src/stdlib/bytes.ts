@@ -2,10 +2,20 @@ import { Effect } from "effect"
 import { checkArrayLength, checkStringLength } from "../interpreter/limits.js"
 import { constructor, methods, prototypeFrom, receiver, requiresNew } from "../interpreter/native.js"
 import { IteratorSymbol, rangeError, syntaxError, typeError } from "../interpreter/model.js"
-import { define, defineAccessor, get, hidden, Arr, Bytes, IteratorObj, Obj } from "../interpreter/objects.js"
+import {
+  define,
+  defineAccessor,
+  get,
+  hidden,
+  Arr,
+  Bytes,
+  IteratorObj,
+  Obj,
+  coerceToNumber,
+  coerceToString,
+} from "../interpreter/objects.js"
 import { describeValue } from "../interpreter/references.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToNumber, coerceToString } from "./value.js"
 
 /** The bytes a Uint8Array, array, or other iterable of numbers describes; the host array clamps each value. */
 const collectBytes = <R>(ctx: Interpreter<R>, source: unknown, name: string): Effect.Effect<Uint8Array, unknown, R> => {

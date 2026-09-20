@@ -2,12 +2,21 @@ import { Effect } from "effect"
 import { constructor, type Method, methods, prototypeFrom, receiver } from "../interpreter/native.js"
 import { checkArrayLength, checkStringLength, MAX_ARRAY_LENGTH } from "../interpreter/limits.js"
 import { invalidData, IteratorSymbol, rangeError, typeError } from "../interpreter/model.js"
-import { define, get, hidden, Arr, GeneratorObj, IteratorObj, Obj } from "../interpreter/objects.js"
+import {
+  define,
+  get,
+  hidden,
+  Arr,
+  GeneratorObj,
+  IteratorObj,
+  Obj,
+  coerceToNumber,
+  coerceToString,
+} from "../interpreter/objects.js"
 import { describeValue, rejectCircularInsertion } from "../interpreter/references.js"
 import { applyCollectionCallback, invoke, preserveConsumerError } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
 import { compareText } from "../tool-runtime.js"
-import { coerceToNumber, coerceToString } from "./value.js"
 
 const arrayLikeSource = (source: unknown): { readonly length: number; readonly source: Obj } => {
   if (source instanceof Obj && typeof get(source, "length") === "number") {

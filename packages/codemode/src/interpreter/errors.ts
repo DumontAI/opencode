@@ -6,10 +6,9 @@ import { type AstNode, formatLocation, PendingThrow, Throw, sourceLocation, type
 import { containsRuntimeReference } from "./references.js"
 import { createErrorValue, type ErrorType, isErrorType } from "./intrinsics.js"
 import { constructor, methods, prototypeFrom, receiver } from "./native.js"
-import { type Callable, define, get, has, hidden, type Native, Arr, ErrorObj, Obj } from "./objects.js"
+import { type Callable, define, get, has, hidden, type Native, Arr, ErrorObj, Obj, coerceToString } from "./objects.js"
 import type { Interpreter } from "./interpreter.js"
 import { formatValue } from "../stdlib/console.js"
-import { coerceToString } from "../stdlib/value.js"
 
 export const normalizeError = (error: unknown): Diagnostic => {
   if (error instanceof PendingThrow) {

@@ -1,10 +1,9 @@
 import { Effect } from "effect"
 import { constructor, type Method, methods, prototypeFrom, receiver } from "../interpreter/native.js"
 import { rangeError } from "../interpreter/model.js"
-import { DateObj, Obj } from "../interpreter/objects.js"
+import { DateObj, Obj, coerceToNumber, coerceToString } from "../interpreter/objects.js"
 import { toPrimitive, toPrimitiveNumber } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToNumber, coerceToString } from "./value.js"
 
 const constructDate = <R>(ctx: Interpreter<R>, args: Array<unknown>, proto: Obj) => {
   if (args.length === 0) return Effect.succeed(new DateObj(proto, Date.now()))

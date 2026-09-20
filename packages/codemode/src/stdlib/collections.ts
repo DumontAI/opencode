@@ -7,15 +7,15 @@ import {
   get,
   getOwn,
   hidden,
-  isWrapper,
   Arr,
+  coerceToString,
   IteratorObj,
   MapObj,
   Obj,
   PromiseObj,
   SetObj,
 } from "../interpreter/objects.js"
-import { describeValue, isRuntimeReference } from "../interpreter/references.js"
+import { describeValue, isOpaque } from "../interpreter/references.js"
 import {
   applyCollectionCallback,
   isSupportedCallback,
@@ -26,8 +26,8 @@ import {
 import type { Interpreter } from "../interpreter/interpreter.js"
 
 const coerceGroupByPropertyKey = <R>(ctx: Interpreter<R>, value: unknown): Effect.Effect<string, unknown, R> => {
-  if (value instanceof PromiseObj) return Effect.succeed("[object Promise]")
-  if (!isWrapper(value) && isRuntimeReference(value)) {
+  if (value instanceof PromiseObj) return Effect.succeed(coerceToString(value))
+  if (isOpaque(value)) {
     throw invalidData(`Object.groupBy callback must return a data value, received ${describeValue(value)}.`)
   }
   return toPrimitiveString(ctx, value)
@@ -131,7 +131,6 @@ export const mapGlobal = <R>(ctx: Interpreter<R>) => {
   })
   define(map, "groupBy", groupBy(ctx, "Map"), hidden)
   const self = (thisValue: unknown, name: string) => receiver(MapObj, thisValue, `Map.prototype.${name}`)
-  const wrap = (items: Array<unknown>) => new Arr(builtins.Array, items)
   defineAccessor(proto, "size", (thisValue) => receiver(MapObj, thisValue, "Map.prototype.size").map.size)
   methods(builtins, proto, [
     ["get", 1, (thisValue, args) => self(thisValue, "get").map.get(args[0])],
@@ -179,17 +178,7 @@ export const mapGlobal = <R>(ctx: Interpreter<R>) => {
     ],
     ["keys", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "keys").map.keys())],
     ["values", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "values").map.values())],
-    [
-      "entries",
-      0,
-      (thisValue) =>
-        new IteratorObj(
-          builtins.Iterator,
-          self(thisValue, "entries")
-            .map.entries()
-            .map(([key, item]) => wrap([key, item])),
-        ),
-    ],
+    ["entries", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "entries").iterator(builtins))],
     [
       "forEach",
       1,
@@ -250,7 +239,7 @@ const loadSetRecord = <R>(
       has: (item: unknown) => Effect.map(ctx.call(has, source, [item]), Boolean),
       keys: () =>
         Effect.flatMap(ctx.call(keys, source, []), (result): Effect.Effect<Iterable<unknown>> => {
-          if (result instanceof IteratorObj) return Effect.succeed(result.iterator)
+          if (result instanceof IteratorObj) return Effect.succeed(result.source)
           if (result instanceof Arr) return Effect.succeed(result.items)
           throw typeError(`Set.${name} expected 'keys' to return an iterator.`)
         }),

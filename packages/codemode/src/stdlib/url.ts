@@ -7,17 +7,16 @@ import {
   entries,
   get,
   hidden,
-  isWrapper,
   Arr,
   IteratorObj,
   Obj,
   URLObj,
   URLSearchParamsObj,
+  coerceToString,
+  isRuntimeReference,
 } from "../interpreter/objects.js"
-import { isRuntimeReference } from "../interpreter/references.js"
 import { applyCollectionCallback, preserveConsumerError } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coerceToString } from "./value.js"
 
 const urlProperties = [
   "href",
@@ -177,7 +176,6 @@ const constructURLSearchParams = <R>(
     if (isRuntimeReference(init)) {
       throw typeError("new URLSearchParams(...) expects a query string, data object, or synchronous iterable pairs.")
     }
-    if (isWrapper(init)) return wrap(new URLSearchParams())
     if (!(init instanceof Obj)) {
       throw typeError(
         "new URLSearchParams(...) expects a query string, data object, iterable pairs, or URLSearchParams.",
@@ -272,17 +270,7 @@ export const urlSearchParamsGlobal = <R>(ctx: Interpreter<R>) => {
     ],
     ["keys", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "keys").params.keys())],
     ["values", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "values").params.values())],
-    [
-      "entries",
-      0,
-      (thisValue) =>
-        new IteratorObj(
-          builtins.Iterator,
-          self(thisValue, "entries")
-            .params.entries()
-            .map(([key, value]) => wrap([key, value])),
-        ),
-    ],
+    ["entries", 0, (thisValue) => new IteratorObj(builtins.Iterator, self(thisValue, "entries").iterator(builtins))],
     ["toString", 0, (thisValue) => self(thisValue, "toString").params.toString()],
     [
       "forEach",

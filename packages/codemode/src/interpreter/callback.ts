@@ -1,9 +1,8 @@
 import { Effect, Exit } from "effect"
-import { coerceToNumber, coerceToString } from "../stdlib/value.js"
 import type { Interpreter } from "./interpreter.js"
 import { primitivePrototype } from "./intrinsics.js"
 import { typeError } from "./model.js"
-import { Callable, get, Native, DateObj, Obj } from "./objects.js"
+import { Callable, get, Native, DateObj, Obj, coerceToNumber, coerceToString } from "./objects.js"
 import { typeofValue } from "./references.js"
 
 export type IteratorCursor<R> = {

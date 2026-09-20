@@ -1,7 +1,8 @@
 import { constructor, constants, methods } from "../interpreter/native.js"
+import { coerceToString } from "../interpreter/objects.js"
 import { rangeError, typeError } from "../interpreter/model.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
-import { coercion, coerceToString } from "./value.js"
+import { coercion } from "./value.js"
 
 export const numberGlobal = <R>(ctx: Interpreter<R>) => {
   const builtins = ctx.builtins
