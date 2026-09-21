@@ -86,3 +86,17 @@ cat > "$out/android/values/ic_launcher_background.xml" <<'XML'
 XML
 
 echo "icons written to $out"
+
+# Web/renderer favicons. The desktop renderer's index.html links these, and the
+# in-app notification icon points at favicon-96x96-v3.png, so they are visible.
+web="$root/dumont/assets/web"
+rm -rf "$web"; mkdir -p "$web"
+px 96  "$web/favicon-96x96.png"
+px 96  "$web/favicon-96x96-v3.png"
+px 180 "$web/apple-touch-icon.png"
+px 180 "$web/apple-touch-icon-v3.png"
+python3 "$here/make-ico.py" "$src" "$web/favicon.ico"
+cp "$web/favicon.ico" "$web/favicon-v3.ico"
+cp "$here/../assets/mark.svg" "$web/favicon.svg"
+cp "$here/../assets/mark.svg" "$web/favicon-v3.svg"
+echo "web icons written to $web"

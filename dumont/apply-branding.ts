@@ -350,6 +350,18 @@ await patch("packages/desktop/src/renderer/i18n/en.ts", [
   ],
 ])
 
+// The second release feed, and the one that is easy to miss because it is not
+// the updater: highlights.tsx polls opencode's changelog and pops a "what's new"
+// dialog. Left alone, a Dumont Code build shows opencode's release notes. The
+// Dumont URL 404s today, and the caller already treats a non-ok response as "no
+// highlights", so it degrades to silence until we publish one.
+await patch("packages/app/src/context/highlights.tsx", [
+  [
+    `const CHANGELOG_URL = "https://opencode.ai/changelog.json"`,
+    `const CHANGELOG_URL = "${UPDATE_FEED_BASE}/changelog.json"`,
+  ],
+])
+
 await patch("packages/app/src/components/windows-app-menu.tsx", [
   [
     `<DropdownMenu.GroupLabel class="desktop-app-menu-heading">OpenCode</DropdownMenu.GroupLabel>`,
@@ -423,6 +435,21 @@ const DEFAULT_THEME_ID = "dumont"`,
 // 6. Logo marks and icons.
 // ---------------------------------------------------------------------------
 await copyInto("assets/logo.tsx", "packages/ui/src/components/logo.tsx")
+
+// The renderer's index.html links these and the in-app notification icon uses
+// favicon-96x96-v3.png, so they ship inside the asar and are user-visible.
+for (const favicon of [
+  "favicon.ico",
+  "favicon-v3.ico",
+  "favicon.svg",
+  "favicon-v3.svg",
+  "favicon-96x96.png",
+  "favicon-96x96-v3.png",
+  "apple-touch-icon.png",
+  "apple-touch-icon-v3.png",
+]) {
+  await copyInto(`assets/web/${favicon}`, `packages/app/public/${favicon}`)
+}
 
 for (const channel of Object.keys(PRODUCT)) {
   const target = join(ROOT, "packages/desktop/icons", channel)
