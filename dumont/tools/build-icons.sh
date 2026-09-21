@@ -81,7 +81,7 @@ XML
 cat > "$out/android/values/ic_launcher_background.xml" <<'XML'
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#41b8b0</color>
+    <color name="ic_launcher_background">#17355a</color>
 </resources>
 XML
 

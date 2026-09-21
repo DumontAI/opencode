@@ -276,6 +276,73 @@ published** or the updater downloads a 404. Curl the exact URL the app
 constructs, not just the human-facing link: a broken download URL is silent until
 someone acts on an update prompt.
 
+## Launch verification
+
+A green build, a passing test suite and a clean grep all said the rebrand was
+done while the first screen a user sees still had "opencode" across the middle of
+it, in a third logo component nobody had looked for. **Always launch the built
+app and look at it.**
+
+This is how, without needing accessibility permissions:
+
+```bash
+hdiutil attach packages/desktop/dist/dumont-code-desktop-mac-arm64.dmg -nobrowse
+cp -R "/Volumes/Dumont Code 1.18.31-arm64/Dumont Code.app" /tmp/verify/
+hdiutil detach "/Volumes/Dumont Code 1.18.31-arm64"
+
+"/tmp/verify/Dumont Code.app/Contents/MacOS/Dumont Code" \
+  --remote-debugging-port=9333 --user-data-dir=/tmp/verify-udata &
+```
+
+A fresh `--user-data-dir` also avoids the "Dumont Code Safe Storage" keychain
+prompt that otherwise blocks the window whenever the signing identity changed.
+Then drive it over CDP (`websocket-client` must connect with
+`suppress_origin=True` or Electron rejects the handshake with 403) to read
+`document.title`, the resolved theme tokens, and `Page.captureScreenshot`.
+
+Cheap checks that need no CDP at all:
+
+```bash
+osascript -e 'tell application "System Events" to get name of every window of process "Dumont Code"'
+osascript -e 'tell application "System Events" to get name of every menu bar item of menu bar 1 of process "Dumont Code"'
+osascript -e 'tell application "System Events" to get name of every menu item of menu 1 of menu bar item "Dumont Code" of menu bar 1 of process "Dumont Code"'
+```
+
+To find a logo you have not rebranded, ask the live DOM rather than grepping:
+
+```js
+[...document.querySelectorAll('svg')].map(s => ({ vb: s.getAttribute('viewBox'), paths: s.querySelectorAll('path').length }))
+```
+
+Anything with a wide viewBox and a handful of paths is a wordmark.
+
+**There are exactly four logo components, and none of them is an asset file.**
+All four are inline SVG in TypeScript, so grepping for `*.svg` or `*.png` finds
+nothing and you conclude, wrongly, that there is no logo to rebrand.
+
+| Component | File | Where it shows |
+|---|---|---|
+| `Mark` | `packages/ui/src/components/logo.tsx` | small slots: new-session header, side panel watermark |
+| `Splash` | same | the launch/loading screen |
+| `Logo` | same | low-opacity watermark on the home and error pages |
+| `WordmarkV2` | `packages/ui/src/v2/components/wordmark-v2.tsx` | **the big faded wordmark behind the new-session composer**, the most visible one |
+
+`WordmarkV2` has exactly one consumer,
+`packages/app/src/pages/new-session/new-session-view.tsx:42`. `packages/ui` is
+shared, so re-check that after an upstream merge.
+
+### The warning that matters most
+
+The build was green. The test suite passed. `bun typecheck` passed across all 30
+packages. The grep over the **built** app for `opencode.ai`, `sst/opencode` and
+`releases.opencode` came back clean. Every gate said the rebrand was finished.
+
+The first screen a user sees still said **opencode** in letters a third of the
+window wide.
+
+A grep and a green build do not prove branding. The only reliable check for this
+app is to launch the built app and look at it.
+
 ## Not done
 
 - Windows and Linux. The config is rebranded for both and `icon.ico` plus the
