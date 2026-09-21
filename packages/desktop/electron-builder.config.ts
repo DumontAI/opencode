@@ -9,11 +9,9 @@ const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
 const signScript = path.join(rootDir, "script", "sign-windows.ps1")
-// The Electron 42 packaging update briefly installed Linux launchers/icons under
-// "opencode-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
-// pins still resolve after the canonical app id changes back to ai.opencode.desktop.
-const legacyDesktopEntry = path.join(packageDir, "resources", "linux", "opencode-desktop.desktop")
-const legacyDesktopEntryFpm = `${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`
+// Upstream keeps a hidden legacy Linux launcher so old GNOME/KDE pins still
+// resolve. Dumont Code has never shipped under another Linux id, so there is
+// nothing to preserve and the entry is dropped along with its opencode name.
 
 const metainfoFpm = (appId: string) =>
   `${path.join(packageDir, "resources", `${appId}.metainfo.xml`)}=/usr/share/metainfo/${appId}.metainfo.xml`
@@ -36,20 +34,20 @@ const channel = (() => {
 })()
 
 const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
+  dev: "ai.dumont.code.dev",
+  beta: "ai.dumont.code.beta",
+  prod: "ai.dumont.code",
 } as const
 
 const getBase = (appId: string): Configuration => ({
-  artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+  artifactName: "dumont-code-desktop-${os}-${arch}.${ext}",
   directories: {
     output: "dist",
     buildResources: "resources",
   },
   // Linux launchers are .desktop files, so this is the desktop file name,
-  // not just the app id. For prod, app id "ai.opencode.desktop" becomes
-  // "ai.opencode.desktop.desktop".
+  // not just the app id. For prod, app id "ai.dumont.code" becomes
+  // "ai.dumont.code.desktop".
   // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
   // https://www.electron.build/docs/linux/
   extraMetadata: {
@@ -85,9 +83,11 @@ const getBase = (appId: string): Configuration => ({
   dmg: {
     sign: true,
   },
+  // "opencode" stays registered next to "dumontcode": the bundled server and
+  // CLI still emit opencode:// deep links, and dropping the scheme breaks them.
   protocols: {
-    name: "OpenCode",
-    schemes: ["opencode"],
+    name: "Dumont Code",
+    schemes: ["dumontcode", "opencode"],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -127,31 +127,32 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Dev",
+        productName: "Dumont Code Dev",
+        publish: { provider: "generic", url: "https://dumont.au/desktop/code/dev", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "opencode-dev", fpm: [metainfoFpm(appId)] },
+        rpm: { packageName: "dumont-code-dev", fpm: [metainfoFpm(appId)] },
       }
     }
     case "beta": {
       return {
         ...base,
         appId,
-        productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        productName: "Dumont Code Beta",
+        protocols: { name: "Dumont Code Beta", schemes: ["dumontcode", "opencode"] },
+        publish: { provider: "generic", url: "https://dumont.au/desktop/code/beta", channel: "latest" },
         deb: { fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "opencode-beta", fpm: [metainfoFpm(appId)] },
+        rpm: { packageName: "dumont-code-beta", fpm: [metainfoFpm(appId)] },
       }
     }
     case "prod": {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
-        deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
-        rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
+        productName: "Dumont Code",
+        protocols: { name: "Dumont Code", schemes: ["dumontcode", "opencode"] },
+        publish: { provider: "generic", url: "https://dumont.au/desktop/code/prod", channel: "latest" },
+        deb: { fpm: [metainfoFpm(appId)] },
+        rpm: { packageName: "dumont-code", fpm: [metainfoFpm(appId)] },
       }
     }
   }

@@ -1,7 +1,11 @@
 export const deepLinkEvent = "opencode:deep-link"
 
+// Dumont Code registers both schemes; the upstream one has to keep working
+// because the bundled server and CLI still emit opencode:// links.
+const SCHEMES = ["dumontcode://", "opencode://"]
+
 const parseUrl = (input: string) => {
-  if (!input.startsWith("opencode://")) return
+  if (!SCHEMES.some((scheme) => input.startsWith(scheme))) return
   if (typeof URL.canParse === "function" && !URL.canParse(input)) return
   try {
     return new URL(input)

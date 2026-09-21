@@ -4,10 +4,10 @@
   "version": "1.18.31",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "homepage": "https://dumont.au",
   "author": {
-    "name": "OpenCode",
-    "email": "hello@opencode.ai"
+    "name": "Dumont Pty Ltd",
+    "email": "hello@dumont.au"
   },
   "scripts": {
     "typecheck": "tsgo -b",
