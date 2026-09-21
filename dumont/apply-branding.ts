@@ -369,6 +369,47 @@ await patch("packages/app/src/components/windows-app-menu.tsx", [
   ],
 ])
 
+// English UI strings. Rather than 40-odd exact edits that break on every
+// upstream copy tweak, this is line-wise, so newly added strings get renamed for
+// free. It deliberately does NOT touch:
+//   - "OpenCode Zen", which is a real third-party model gateway, not our branding
+//   - wsl.* keys, which install and run the actual upstream opencode CLI inside
+//     WSL, so calling that "Dumont Code" would be a lie
+//   - the handful of keys below that describe upstream rather than this app
+// The other 60 locales keep upstream's wording. Carlos uses English; retranslating
+// a brand rename across every locale is not worth it and would be machine slop.
+const I18N_KEEP_UPSTREAM = [
+  "dialog.model.unpaid.freeModels.title", // the free models really are OpenCode Zen's
+  "sidebar.gettingStarted.line1", // same
+  "error.page.report.prefix", // our fork's bugs are overwhelmingly upstream's
+  "settings.desktop.wsl.description", // the opencode server process, by name
+]
+
+for (const relative of ["packages/app/src/i18n/en.ts", "packages/app/src/i18n/desktop-native.ts"]) {
+  const file = join(ROOT, relative)
+  if (!existsSync(file)) {
+    note("fail", `${relative}: file does not exist (moved upstream?)`)
+    continue
+  }
+  const before = await readFile(file, "utf8")
+  const after = before
+    .split("\n")
+    .map((line) => {
+      if (!line.includes("OpenCode")) return line
+      if (line.includes("OpenCode Zen")) return line
+      if (/^\s*"(desktop\.)?wsl\./.test(line)) return line
+      if (I18N_KEEP_UPSTREAM.some((key) => line.includes(`"${key}"`))) return line
+      return line.replaceAll("OpenCode Desktop", "Dumont Code").replaceAll("OpenCode", "Dumont Code")
+    })
+    .join("\n")
+  if (after === before) {
+    note("skip", relative)
+  } else {
+    if (!CHECK) await writeFile(file, after)
+    note("ok", relative)
+  }
+}
+
 await patch("packages/ui/src/components/favicon.tsx", [
   [
     `<Meta name="apple-mobile-web-app-title" content="OpenCode" />`,
