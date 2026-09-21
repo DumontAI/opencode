@@ -82,14 +82,19 @@ upstream merge that adds an upgrade affordance to the desktop UI.
 ## Build
 
 ```bash
-bun install            # repo root, bun workspace
-./dumont/build-mac.sh  # prebuild + bundles + package + sign + notarise (arm64)
+bun install                            # repo root, bun workspace
+./dumont/build-mac.sh --arm64 --x64    # bundle, package, sign, notarise, verify
 ```
+
+Pass every arch you intend to ship in ONE invocation. The script runs
+electron-vite once per arch (it has to; see the x64 section below), then merges
+the per-arch `latest-mac.yml` files into the single feed the updater reads.
 
 Output lands in `packages/desktop/dist/`:
 
-- `dumont-code-desktop-mac-arm64.dmg` (what users download)
-- `dumont-code-desktop-mac-arm64.zip` + `latest-mac.yml` (what the updater reads)
+- `dumont-code-desktop-mac-{arm64,x64}.dmg` (what people download)
+- `dumont-code-desktop-mac-{arm64,x64}.zip` (what the updater downloads)
+- `latest-mac.yml` (the merged feed, must list both arches)
 
 Requires node >= 22 and `bun`. The repo is a bun workspace; npm and yarn will not
 resolve `workspace:*`. Install bun with `curl -fsSL https://bun.sh/install | bash`.
