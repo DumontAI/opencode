@@ -372,26 +372,55 @@ Building x64 on an Apple silicon Mac produces a **broken app that passes every
 gate**. This is the worst failure found in this job, worse than the updater trap,
 because nothing flags it.
 
-node-pty, `@parcel/watcher` and msgpackr-extract each ship one prebuilt package
-per platform and arch, listed in `optionalDependencies` and selected by their
-`os` and `cpu` fields. **bun installs only the ones matching the machine it runs
-on.** On an arm64 Mac the darwin-x64 packages are never fetched, so
-electron-builder packages the x64 app with the arm64 binaries, because they are
-the only ones there. It says so in one quiet line among hundreds:
+There are **two** causes, and fixing only the first leaves the app just as dead.
+
+**1. bun does not install the other arch's prebuilts.** node-pty,
+`@parcel/watcher` and msgpackr-extract each ship one prebuilt package per
+platform and arch, listed in `optionalDependencies` and selected by `os`/`cpu`.
+bun installs only the ones matching the machine it runs on, so on Apple silicon
+the darwin-x64 packages are never fetched and electron-builder packages the arm64
+binaries into the x64 app. It says so in one quiet line among hundreds:
 
 ```
 • missing optional dependencies  dependencies=[... "@lydell/node-pty-darwin-x64@1.2.0-beta.12" ...]
 ```
 
-The resulting DMG is signed, notarised, stapled, and
-`spctl -a -t exec -vv` reports `accepted, source=Notarized Developer ID`. Launch
-it and the main process dies loading `pty.node` **before it opens its log file**:
-no window, no log directory, no crash report, no stderr, just a process alive at
-0% CPU forever. Every diagnostic you would reach for is empty.
+**2. The bundle itself is arch-specific.** This is the real one. Upstream's
+`opencode:node-pty-narrower` plugin in `electron.vite.config.ts` rewrites
+`@lydell/node-pty` to the concrete `@lydell/node-pty-${platform}-${arch}` package
+using the **build machine's** `process.arch`. electron-vite runs once, and
+electron-builder then packages both arches from that one bundle, so the x64 app
+ships `import * as pty from "@lydell/node-pty-darwin-arm64"` and throws
+`Cannot find module './prebuilds/darwin-x64/pty.node'`. Upstream never hits this
+because their CI builds each arch on its own runner.
+
+The config now honours `DUMONT_TARGET_ARCH` and `build-mac.sh` runs electron-vite
+once per arch. That means electron-builder runs once per arch too, and it
+rewrites `latest-mac.yml` every run, so `merge-latest-mac.ts` combines the
+per-arch feeds. Publishing one arch's copy would leave the other never updating.
+
+### Why it looks dead when it is not
+
+The resulting DMG is signed, notarised, stapled, and `spctl -a -t exec -vv`
+reports `accepted, source=Notarized Developer ID`. Launch it and you get **no
+window, no log directory, no crash report, no stderr**, just a process alive at
+0% CPU. Every diagnostic you would reach for is empty.
+
+It is not dead. The main process threw, Electron put the error in a modal
+`NSAlert`, and an app that is not frontmost shows you nothing. The thing that
+cracks it open:
+
+```bash
+sample <pid> 3 -f /tmp/app.sample     # look for -[NSAlert runModal]
+```
+
+Then bring it to the front and screenshot it; the alert has the full stack. Note
+also that each failed launch leaves a stuck process behind, and they accumulate:
+kill every one before retesting or you will be reading a stale instance.
 
 ```bash
 ./dumont/tools/fetch-x64-natives.sh     # pull the darwin-x64 prebuilts
-./dumont/tools/check-native-archs.sh    # assert every .node matches its app
+./dumont/tools/check-native-archs.sh    # assert natives AND bundle imports match
 ```
 
 `build-mac.sh` runs the first automatically for any x64 or universal build and
@@ -400,6 +429,13 @@ uploading. Keep the pinned versions in `fetch-x64-natives.sh` in step with the
 lockfile: a mismatched prebuilt is worse than a missing one, because it loads.
 
 **Launching the arm64 build proves nothing about the x64 build.** Launch both.
+
+And give the x64 build **five minutes** on its first launch. Rosetta translates
+the whole Electron framework ahead of time, and until it finishes the process sits
+there with no window and no log, looking exactly like the failure above. Killing it
+at 40 seconds, which is generous for arm64, throws away the translation and it
+starts over next time. A healthy run ends with about six processes, a new directory
+under `logs/`, and its remote-debugging port answering.
 
 ### The grep that lies
 
