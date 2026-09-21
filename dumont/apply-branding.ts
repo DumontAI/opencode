@@ -476,6 +476,11 @@ const DEFAULT_THEME_ID = "dumont"`,
 // 6. Logo marks and icons.
 // ---------------------------------------------------------------------------
 await copyInto("assets/logo.tsx", "packages/ui/src/components/logo.tsx")
+// The third logo, and the one that is most visible: the big faded wordmark
+// behind the new-session composer. It is not Logo/Mark/Splash, it lives in the
+// v2 component set, and the only reason it was caught is that the built app was
+// launched and looked at.
+await copyInto("assets/wordmark-v2.tsx", "packages/ui/src/v2/components/wordmark-v2.tsx")
 
 // The renderer's index.html links these and the in-app notification icon uses
 // favicon-96x96-v3.png, so they ship inside the asar and are user-visible.

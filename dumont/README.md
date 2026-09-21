@@ -47,6 +47,38 @@ grep -ri "opencode\.ai\|anomalyco\|sst/opencode\|releases\.opencode" \
 server and CLI still emit `opencode://` deep links; dropping the scheme breaks
 them. Same lesson as `allowedProtocols` on Dumont Chat.
 
+### The second feed, which the first pass missed
+
+`packages/app/src/context/highlights.tsx` polls
+`https://opencode.ai/changelog.json` and pops a "what's new" dialog. It is not
+the updater, so repointing `publish` does nothing for it, and left alone a Dumont
+Code build shows opencode's release notes. It now points at
+`https://dumont.au/desktop/code/changelog.json`. Nothing is published there yet;
+the caller already treats a non-ok response as "no highlights", so it degrades to
+silence rather than an error.
+
+It was only found by grepping the **built** app. Grep the build, not the source.
+
+### What is left pointing upstream, and why that is correct
+
+These survive in the shipped `app.asar` and should:
+
+| URL | What it is |
+|---|---|
+| `opencode.ai/desktop-theme.json` | a JSON Schema `$id` in every theme file. Never fetched. |
+| `opencode.ai/docs*`, `/desktop-feedback` | documentation and feedback links. This is opencode; the docs are theirs. |
+| `opencode.ai/zen*`, `/go`, `models.opencode.ai` | OpenCode Zen is a real model gateway and models.dev mirror, a product integration and not branding. |
+| `opencode.ai/install`, `formulae.brew.sh/.../opencode.json`, `api.github.com/repos/anomalyco/opencode/releases/latest` | the **CLI's** self-upgrade path in `packages/opencode/src/installation`. |
+
+That last row is worth being precise about. The server exposes
+`POST /global/upgrade`, which calls `Installation.upgrade`. Nothing in
+`packages/app/src` or `packages/desktop/src` calls it, and
+`Installation.method()` returns `unknown` for the app's bundled sidecar, so the
+route answers 400. If a user does have the opencode CLI installed globally it
+would upgrade **that CLI**, not this app: the desktop bundle is replaced only by
+electron-updater, which reads `app-update.yml`. Worth re-checking after any
+upstream merge that adds an upgrade affordance to the desktop UI.
+
 ## Build
 
 ```bash
@@ -64,6 +96,11 @@ resolve `workspace:*`. Install bun with `curl -fsSL https://bun.sh/install | bas
 
 `bun run prebuild` also builds the opencode CLI node bundle out of
 `packages/opencode`, so a desktop build is never just the Electron part.
+
+The `.husky/pre-push` hook runs `bun typecheck` across all 30 packages, so
+`git push` needs bun on PATH or it fails with `bun: command not found` and a
+confusing husky 127. Push with `PATH="$HOME/.bun/bin:$PATH" git push`. The upside
+is that a successful push has already typechecked the whole monorepo.
 
 ## Branding
 
@@ -129,8 +166,10 @@ build dead with an error that does not point at the fix:
 
 1. `CSC_NAME` must **not** include the `Developer ID Application:` prefix. Use
    `Dumont Pty Ltd (5VQ28Z7532)`.
-2. The identity lives in a dedicated keychain, `dumont-signing.keychain`, not the
-   login keychain, so no interactive password prompt is needed.
+2. The identity lives in a dedicated keychain, **`dumont-signing-ci.keychain`**.
+   See "If codesign fails with errSecInternalComponent" below; the older
+   `dumont-signing.keychain` is locked and its password is not in the Dumont org
+   vault.
 3. macOS does not ship the G2 intermediate. If `security find-identity -v` does
    not list the identity as valid, import
    `https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`.
@@ -142,6 +181,59 @@ build dead with an error that does not point at the fix:
 6. Do not inspect `dist/` while a build is running. electron-builder deletes and
    recreates the bundle mid-run, and a `codesign` reading taken then reports
    `adhoc, linker-signed`.
+
+### If codesign fails with errSecInternalComponent
+
+That is not a certificate problem. It means the keychain holding the private key
+is locked, or its key has no partition list allowing `codesign` to use it
+non-interactively, so `security` tries to raise a GUI prompt that never appears
+and the build dies.
+
+`dumont-signing.keychain` hit this on 2026-09-21: it had auto-locked, its
+password is in nobody's reach (it is not in the Dumont org vault, so it is in
+someone's personal vault), and every `security` call against it hangs.
+
+The identity was rebuilt into a new keychain without needing that password,
+because the **certificate is public** and readable out of a locked keychain while
+the **private key was already on disk** at `~/.appstore/devid/devid-g2.key`:
+
+```bash
+security find-certificate -c "Developer ID Application: Dumont Pty Ltd (5VQ28Z7532)" \
+  -p ~/Library/Keychains/dumont-signing.keychain-db > devid-g2.pem
+
+# confirm the key on disk matches that certificate before trusting it
+diff <(openssl x509 -in devid-g2.pem -noout -pubkey) \
+     <(openssl pkey -in ~/.appstore/devid/devid-g2.key -pubout)
+
+# -legacy -macalg sha1: OpenSSL 3 defaults produce a PKCS#12 macOS cannot read,
+# and it reports that as "MAC verification failed ... (wrong password?)"
+openssl pkcs12 -export -legacy -macalg sha1 \
+  -inkey ~/.appstore/devid/devid-g2.key -in devid-g2.pem \
+  -name "Developer ID Application: Dumont Pty Ltd (5VQ28Z7532)" \
+  -out devid-g2.p12 -passout "pass:$PW"
+
+security create-keychain -p "$PW" dumont-signing-ci.keychain
+security set-keychain-settings dumont-signing-ci.keychain   # no timeout, no lock on sleep
+security import devid-g2.p12 -k dumont-signing-ci.keychain -P "$PW" \
+  -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productsign
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PW" dumont-signing-ci.keychain
+```
+
+`set-key-partition-list` is the step that actually fixes `errSecInternalComponent`;
+importing alone is not enough. `set-keychain-settings` with no flags is what stops
+it recurring, because the default is to lock on sleep.
+
+The old keychain was dropped from the search list rather than deleted. Two
+certificates sharing a CN make electron-builder resolve a SHA-1 `CSC_NAME` back
+to that name and `codesign` then fails as ambiguous.
+
+```bash
+security list-keychains -d user   # expect dumont-signing-ci + login, not dumont-signing
+```
+
+**The new keychain password is not in the vault.** It is in this session's
+scratchpad only. Put it in the Dumont org vault, or regenerate the keychain with
+a password of your choosing using the recipe above.
 
 ### Verifying
 
