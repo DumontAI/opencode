@@ -342,6 +342,24 @@ const isDeepLink = (value: string) => PROTOCOL_SCHEMES.some((scheme) => value.st
 
 await patch("packages/desktop/src/main/windows.ts", [[`    title: "OpenCode",`, `    title: "${PRODUCT.prod.name}",`]])
 
+// Cross-arch builds. Upstream's "opencode:node-pty-narrower" plugin rewrites
+// `@lydell/node-pty` to the concrete `@lydell/node-pty-<platform>-<arch>` package
+// using the BUILD MACHINE's process.arch, which bakes the host arch into the
+// bundle. electron-vite runs once while electron-builder packages both arches
+// from that single bundle, so an x64 app built on Apple silicon ships a bundle
+// that imports node-pty-darwin-arm64 and dies on launch with
+// "Cannot find module './prebuilds/darwin-x64/pty.node'".
+//
+// Upstream never hits this because their CI builds each arch on its own runner.
+// We build both here, so the target arch has to be selectable.
+await patch("packages/desktop/electron.vite.config.ts", [
+  [
+    `const nodePtyPkg = \`@lydell/node-pty-\${process.platform}-\${process.arch}\``,
+    `const targetArch = process.env.DUMONT_TARGET_ARCH ?? process.arch
+const nodePtyPkg = \`@lydell/node-pty-\${process.platform}-\${targetArch}\``,
+  ],
+])
+
 // ---------------------------------------------------------------------------
 // 3. Renderer: window title, notification icon, updater copy.
 // ---------------------------------------------------------------------------

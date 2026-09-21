@@ -29,6 +29,10 @@ echo "==> publishing Dumont Code $version"
 # Refuse to publish a changelog the app would silently discard.
 bun "$root/dumont/tools/check-changelog.ts"
 
+# Refuse to publish an app whose native modules are the wrong architecture.
+# Nothing else catches it: such a build signs, notarises and passes spctl.
+"$root/dumont/tools/check-native-archs.sh"
+
 artefacts=(
   "dumont-code-desktop-mac-arm64.dmg"
   "dumont-code-desktop-mac-arm64.zip"

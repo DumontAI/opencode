@@ -36,16 +36,46 @@ export APPLE_API_ISSUER="afa25cf9-df72-497d-a918-e32d2043982c"
 
 cd "$root/packages/desktop"
 
+# bun installs only the native prebuilts matching THIS machine, so an x64 or
+# universal build on Apple silicon would otherwise package arm64 binaries into an
+# x64 app: signed, notarised, and dead on launch with no log and no crash report.
+case "${archs[*]}" in
+  *x64*|*universal*) "$root/dumont/tools/fetch-x64-natives.sh" ;;
+esac
+
 echo "==> prebuild (icons, metainfo, CLI bundle)"
 bun run prebuild
 
-echo "==> renderer + main bundles"
-bun run build
+# One electron-vite run PER ARCH. Upstream's node-pty-narrower plugin bakes the
+# target arch into the main bundle, so a single shared bundle cannot serve both:
+# the x64 app would import node-pty-darwin-arm64 and die on launch. See
+# dumont/README.md, "The x64 build that signs, notarises and does not run".
+feeds=()
+for a in "${archs[@]}"; do
+  node_arch="${a#--}"
+  echo
+  echo "==> bundle for $node_arch"
+  DUMONT_TARGET_ARCH="$node_arch" bun run build
 
-echo "==> package, sign, notarise (${archs[*]})"
-npx electron-builder --mac dmg zip "${archs[@]}" \
-  --config electron-builder.config.ts \
-  --publish=never
+  echo "==> package, sign, notarise ($node_arch)"
+  npx electron-builder --mac dmg zip "$a" \
+    --config electron-builder.config.ts \
+    --publish=never
+
+  # electron-builder rewrites latest-mac.yml every run, so keep each arch's copy
+  # and merge them once at the end.
+  cp dist/latest-mac.yml "dist/latest-mac.$node_arch.yml"
+  feeds+=("dist/latest-mac.$node_arch.yml")
+done
+
+if [ ${#feeds[@]} -gt 1 ]; then
+  echo
+  echo "==> merge the per-arch updater feeds"
+  bun "$root/dumont/tools/merge-latest-mac.ts" "${feeds[@]}"
+fi
+
+echo "==> every packaged .node must match its app's arch"
+"$root/dumont/tools/check-native-archs.sh"
 
 echo
 echo "==> artefacts"

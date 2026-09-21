@@ -366,6 +366,41 @@ nothing and you conclude, wrongly, that there is no logo to rebrand.
 `packages/app/src/pages/new-session/new-session-view.tsx:42`. `packages/ui` is
 shared, so re-check that after an upstream merge.
 
+### The x64 build that signs, notarises and does not run
+
+Building x64 on an Apple silicon Mac produces a **broken app that passes every
+gate**. This is the worst failure found in this job, worse than the updater trap,
+because nothing flags it.
+
+node-pty, `@parcel/watcher` and msgpackr-extract each ship one prebuilt package
+per platform and arch, listed in `optionalDependencies` and selected by their
+`os` and `cpu` fields. **bun installs only the ones matching the machine it runs
+on.** On an arm64 Mac the darwin-x64 packages are never fetched, so
+electron-builder packages the x64 app with the arm64 binaries, because they are
+the only ones there. It says so in one quiet line among hundreds:
+
+```
+• missing optional dependencies  dependencies=[... "@lydell/node-pty-darwin-x64@1.2.0-beta.12" ...]
+```
+
+The resulting DMG is signed, notarised, stapled, and
+`spctl -a -t exec -vv` reports `accepted, source=Notarized Developer ID`. Launch
+it and the main process dies loading `pty.node` **before it opens its log file**:
+no window, no log directory, no crash report, no stderr, just a process alive at
+0% CPU forever. Every diagnostic you would reach for is empty.
+
+```bash
+./dumont/tools/fetch-x64-natives.sh     # pull the darwin-x64 prebuilts
+./dumont/tools/check-native-archs.sh    # assert every .node matches its app
+```
+
+`build-mac.sh` runs the first automatically for any x64 or universal build and
+the second after packaging; `publish-mac.sh` runs the check again before
+uploading. Keep the pinned versions in `fetch-x64-natives.sh` in step with the
+lockfile: a mismatched prebuilt is worse than a missing one, because it loads.
+
+**Launching the arm64 build proves nothing about the x64 build.** Launch both.
+
 ### The grep that lies
 
 Use `-a`. Without it, the acceptance grep reports a clean build that is not clean:
