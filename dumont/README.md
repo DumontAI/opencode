@@ -19,6 +19,14 @@ renders are rebranded. The CLI wrap lives in a separate repo
 | Update feed | `https://dumont.au/desktop/code/<channel>` |
 | Signing identity | `Developer ID Application: Dumont Pty Ltd (5VQ28Z7532)` |
 
+> **The x64 build is unproven.** It is signed, notarised and it launches, but
+> only ever under Rosetta on an Apple silicon Mac, because that is the only
+> hardware it has been near. An x64 DMG that was signed, notarised and
+> Gatekeeper-accepted has already failed to run once in this project, so those
+> gates are not evidence. **The first Intel Mac to open it is the acceptance
+> test, and whoever runs it should be told that, not handed a build described as
+> verified.** arm64 is verified properly: launched, driven over CDP, screenshotted.
+
 ## The trap
 
 Upstream ships this in `packages/desktop/electron-builder.config.ts`:
@@ -428,12 +436,34 @@ kill every one before retesting or you will be reading a stale instance.
 ./dumont/tools/check-native-archs.sh    # assert natives AND bundle imports match
 ```
 
+`check-native-archs.sh` enumerates **every** `*.node` in each packaged app, groups
+them by package family, and fails unless each family has a build for that app's
+own architecture. Checking only the packages that have burned us would have
+missed the next one: `@msgpackr-extract` has no darwin-x64 build in either app,
+and the earlier version of this script passed it silently.
+
+A family may be listed in `optional_families` only with evidence that it degrades
+gracefully, gathered by running the app's own Electron binary as node:
+
+```bash
+ELECTRON_RUN_AS_NODE=1 "<app>/Contents/MacOS/Dumont Code" test.js
+```
+
+That runs on the real target arch, against the real asar. For msgpackr it printed
+`process.arch = x64`, `require msgpackr: OK`, `pack/unpack: OK`, and
+`msgpackr-extract native: FAILED`, while the arm64 control loaded the native
+module. msgpackr wraps that require in `try { ... } catch { /* native module is
+optional */ }` and honours `MSGPACKR_NATIVE_ACCELERATION_DISABLED`, so running
+without it is supported. The cost is decode speed, not correctness.
+
 `build-mac.sh` runs the first automatically for any x64 or universal build and
 the second after packaging; `publish-mac.sh` runs the check again before
 uploading. Keep the pinned versions in `fetch-x64-natives.sh` in step with the
 lockfile: a mismatched prebuilt is worse than a missing one, because it loads.
 
 **Launching the arm64 build proves nothing about the x64 build.** Launch both.
+And launching the x64 build under Rosetta does not prove it runs on a real Intel
+Mac either; see the note at the top of this file.
 
 And give the x64 build **five minutes** on its first launch. Rosetta translates
 the whole Electron framework ahead of time, and until it finishes the process sits
