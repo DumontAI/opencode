@@ -131,6 +131,21 @@ const legacyDesktopEntryFpm = \`\${legacyDesktopEntry}=/usr/share/applications/o
     `  artifactName: "dumont-code-desktop-\${os}-\${arch}.\${ext}",`,
   ],
   [
+    `  extraMetadata: {
+    desktopName: \`\${appId}.desktop\`,
+  },`,
+    `  extraMetadata: {
+    desktopName: \`\${appId}.desktop\`,
+    // electron-builder derives updaterCacheDirName from the package name, so
+    // without this the shipped app-update.yml reads "@opencode-aidesktop-updater".
+    // It is only a local cache directory, invisible to users, but it is the last
+    // opencode string in that file and the file is the one people read to check
+    // the updater. Nothing reads package.json name at runtime: the app sets its
+    // name and userData path explicitly from APP_NAMES/APP_IDS.
+    name: "dumont-code-desktop",
+  },`,
+  ],
+  [
     `  // Linux launchers are .desktop files, so this is the desktop file name,
   // not just the app id. For prod, app id "ai.opencode.desktop" becomes
   // "ai.opencode.desktop.desktop".`,

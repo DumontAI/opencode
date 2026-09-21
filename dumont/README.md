@@ -276,6 +276,41 @@ published** or the updater downloads a 404. Curl the exact URL the app
 constructs, not just the human-facing link: a broken download URL is silent until
 someone acts on an update prompt.
 
+**Build every arch you ship in ONE invocation**, `./dumont/build-mac.sh --arm64 --x64`.
+electron-builder regenerates `latest-mac.yml` per run, so building the two arches
+separately leaves the feed describing only whichever ran last, and the other arch
+never sees an update. `publish-mac.sh` refuses to upload a feed missing an arch.
+
+### changelog.json
+
+The in-app release notes dialog reads `changelog.json`. It sits at the **`code/`
+root, not under `prod/`**, because `CHANGELOG_URL` has no channel in it.
+
+Its shape is not obvious and three rules drop content silently:
+
+1. A highlight group is discarded unless its `source` **contains the substring
+   "desktop"**, case-insensitively. This is the one that bites.
+2. An item is discarded unless it has a non-empty `title` **and** `description`.
+3. `sliceHighlights` starts at the release whose `tag` equals the running app
+   version, so the tag must match `packages/desktop/package.json` exactly.
+
+Break any of them and you get zero highlights, no dialog and no error, which is
+indistinguishable from the feed being down.
+
+```bash
+bun dumont/tools/check-changelog.ts
+```
+
+That validates `dumont/changelog.json` against the **real** parser, sliced out of
+`packages/app/src/context/highlights.tsx` rather than restated, so it keeps
+telling the truth after an upstream change instead of testing a stale copy.
+`publish-mac.sh` runs it before uploading anything.
+
+A missing `changelog.json` is not fatal. The fetch treats any non-ok response as
+"no highlights" and `.catch(() => undefined)` swallows network errors, so a 404
+shows nothing at all rather than an error. It does mean the app refetches on
+every launch, because `markSeen()` is skipped on that path.
+
 ## Launch verification
 
 A green build, a passing test suite and a clean grep all said the rebrand was
@@ -330,6 +365,27 @@ nothing and you conclude, wrongly, that there is no logo to rebrand.
 `WordmarkV2` has exactly one consumer,
 `packages/app/src/pages/new-session/new-session-view.tsx:42`. `packages/ui` is
 shared, so re-check that after an upstream merge.
+
+### The grep that lies
+
+Use `-a`. Without it, the acceptance grep reports a clean build that is not clean:
+
+```
+$ grep -rio "opencode\.ai\|sst/opencode\|releases\.opencode" "Dumont Code.app"
+Binary file Dumont Code.app/Contents/Resources/app.asar matches
+
+$ grep -rioa "opencode\.ai\|sst/opencode\|releases\.opencode" "Dumont Code.app" | wc -l
+225
+```
+
+Almost everything that matters lives inside `app.asar`, which `grep` treats as
+binary. Run it from a directory where the only match is the asar and you get one
+summary line; filter or pipe that line away and you get **nothing**, which reads
+exactly like a pass. Always `-a`, and always count.
+
+Same failure mode as the next section and as a truncated search: the check
+returned successfully and the thing was still broken. An empty result is only
+evidence of absence once you have proved the search could have found something.
 
 ### The warning that matters most
 

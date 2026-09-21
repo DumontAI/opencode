@@ -1,0 +1,35 @@
+{
+  "releases": [
+    {
+      "tag": "1.18.31",
+      "name": "Dumont Code 1.18.31",
+      "highlights": [
+        {
+          "source": "desktop",
+          "items": [
+            {
+              "title": "Dumont Code",
+              "description": "The desktop app is now Dumont Code: its own name, icon, bundle id and dumontcode:// scheme. opencode:// keeps working, because the server and CLI still emit those deep links."
+            },
+            {
+              "title": "Updates come from Dumont",
+              "description": "The updater and the release notes you are reading both point at dumont.au. Nothing in the app can pull a build from an upstream host any more."
+            },
+            {
+              "title": "A Dumont theme, light and dark",
+              "description": "Navy and teal, on by default, and built so light mode is the good one rather than an afterthought. Every upstream theme is still in the picker."
+            },
+            {
+              "title": "Signed and notarised",
+              "description": "Apple Developer ID signed, notarised and stapled, so it opens on first launch with no trip through Privacy & Security."
+            },
+            {
+              "title": "Apple silicon and Intel",
+              "description": "Separate arm64 and x64 downloads, both signed, both fed by the same update channel."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -13,7 +13,12 @@
 # rejects the result.
 set -euo pipefail
 
-arch="${1:---arm64}"
+# Accepts several arch flags. Build every arch you intend to ship in ONE
+# invocation: electron-builder regenerates latest-mac.yml per run, so building
+# arm64 and x64 separately leaves the updater feed describing only whichever ran
+# last, and the other arch silently never sees an update.
+archs=("$@")
+[ ${#archs[@]} -eq 0 ] && archs=(--arm64)
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"
@@ -37,8 +42,8 @@ bun run prebuild
 echo "==> renderer + main bundles"
 bun run build
 
-echo "==> package, sign, notarise ($arch)"
-npx electron-builder --mac dmg zip "$arch" \
+echo "==> package, sign, notarise (${archs[*]})"
+npx electron-builder --mac dmg zip "${archs[@]}" \
   --config electron-builder.config.ts \
   --publish=never
 

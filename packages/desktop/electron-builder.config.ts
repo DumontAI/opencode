@@ -52,6 +52,13 @@ const getBase = (appId: string): Configuration => ({
   // https://www.electron.build/docs/linux/
   extraMetadata: {
     desktopName: `${appId}.desktop`,
+    // electron-builder derives updaterCacheDirName from the package name, so
+    // without this the shipped app-update.yml reads "@opencode-aidesktop-updater".
+    // It is only a local cache directory, invisible to users, but it is the last
+    // opencode string in that file and the file is the one people read to check
+    // the updater. Nothing reads package.json name at runtime: the app sets its
+    // name and userData path explicitly from APP_NAMES/APP_IDS.
+    name: "dumont-code-desktop",
   },
   files: ["out/**/*", "resources/**/*", "!resources/opencode-cli*"],
   extraResources: [
