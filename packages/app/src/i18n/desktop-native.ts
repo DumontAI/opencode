@@ -308,7 +308,7 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.wsl.error.opencodeCannotRun": "opencode is installed but could not run",
   "desktop.wsl.error.opencodeNotInstalled": "OpenCode is not installed in {{distro}}",
   "desktop.wsl.error.updateVersion":
-    "Dumont Code update finished but {{distro}} still reports {{installed}}; expected {{expected}}",
+    "OpenCode update finished but {{distro}} still reports {{installed}}; expected {{expected}}",
   "desktop.wsl.error.noVersion": "no version",
   "desktop.wsl.error.serverExited": "WSL server exited after startup (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":

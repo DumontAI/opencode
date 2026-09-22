@@ -505,13 +505,24 @@ for (const relative of ["packages/app/src/i18n/en.ts", "packages/app/src/i18n/de
     continue
   }
   const before = await readFile(file, "utf8")
+  // These files wrap long entries, putting the key on one line and the value on
+  // the next. A purely per-line rule therefore misses the value of every wrapped
+  // entry: that is how "OpenCode update finished but ..." under
+  // desktop.wsl.error.updateVersion got renamed despite the wsl guard, and it
+  // only surfaced because wsl/servers.test.ts asserts that exact string.
+  // So track the key the current line belongs to.
+  let key: string | undefined
   const after = before
     .split("\n")
     .map((line) => {
+      const declared = line.match(/^\s*"([^"]+)"\s*:/)
+      if (declared) key = declared[1]
       if (!line.includes("OpenCode")) return line
       if (line.includes("OpenCode Zen")) return line
-      if (/^\s*"(desktop\.)?wsl\./.test(line)) return line
-      if (I18N_KEEP_UPSTREAM.some((key) => line.includes(`"${key}"`))) return line
+      // wsl.* installs and runs the real upstream opencode CLI inside WSL, so
+      // calling that "Dumont Code" would be a lie.
+      if (key && /^(desktop\.)?wsl\./.test(key)) return line
+      if (key && I18N_KEEP_UPSTREAM.includes(key)) return line
       return line.replaceAll("OpenCode Desktop", "Dumont Code").replaceAll("OpenCode", "Dumont Code")
     })
     .join("\n")

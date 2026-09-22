@@ -222,9 +222,16 @@ let the script re-apply:
 git checkout --theirs <file>   # "theirs" during a merge is the incoming upstream side
 bun dumont/apply-branding.ts
 bun dumont/apply-branding.ts --check
-(cd packages/desktop && bun test electron-builder.config.test.ts)
+(cd packages/desktop && bun test src/main)   # the whole suite, not just the config test
 git add -A && git commit
 ```
+
+Run the **whole** `src/main` suite, not just `electron-builder.config.test.ts`.
+The branding script edits i18n strings, and upstream asserts on some of them.
+A rename of `desktop.wsl.error.updateVersion` shipped for four commits because
+only the config test was run after the change; `wsl/servers.test.ts` had been
+failing the entire time and nothing looked. The pre-push hook runs `typecheck`,
+which does not catch a changed string.
 
 Files the script does **not** own (`dumont/**` itself) are ours outright.
 
