@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "tag": "1.18.32-dumont.1",
+      "name": "Dumont Code 1.18.32-dumont.1",
+      "highlights": [
+        {
+          "source": "desktop",
+          "items": [
+            {
+              "title": "Your Dumont setup now loads",
+              "description": "The desktop app reads the same config as the dumont-code CLI, so team rules, memory, permissions and every shared skill are available here too. Before this it only looked at the stock opencode config and found none of it."
+            },
+            {
+              "title": "Provider keys work without a terminal",
+              "description": "Keys come from ~/.config/dumont/llm-keys.env directly, so launching from the Dock or Finder gets the same models as running from a shell."
+            },
+            {
+              "title": "No more Unauthorized on your first message",
+              "description": "The app used to default to a model routed through OpenCode Zen, a paid gateway Dumont does not fund, which failed with api_error: Unauthorized. It now picks a provider you actually have a key for."
+            },
+            {
+              "title": "You can tell the providers apart",
+              "description": "Two models could both show as deepseek-v4-flash, one of which would never work. Anything routed through Zen is now labelled, so the model you pick is the model you get."
+            },
+            {
+              "title": "The login page is Dumont Code",
+              "description": "Signing in to a provider used to land on a page branded opencode. It is ours now, wordmark and all."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "tag": "1.18.31",
       "name": "Dumont Code 1.18.31",
       "highlights": [

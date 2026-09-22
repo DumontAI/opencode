@@ -77,6 +77,35 @@ async function patch(relative: string, edits: Edit[]) {
   note("ok", relative)
 }
 
+/**
+ * Replace a whole block matched by a regex, for the cases where the upstream text
+ * is too long to embed literally. Same contract as `patch`: exactly one match, or
+ * it fails loudly.
+ */
+async function patchBlock(relative: string, pattern: RegExp, replacement: string) {
+  const file = join(ROOT, relative)
+  if (!existsSync(file)) {
+    note("fail", `${relative}: file does not exist (moved upstream?)`)
+    return
+  }
+  const text = await readFile(file, "utf8")
+  if (text.includes(replacement.trimEnd())) {
+    note("skip", relative)
+    return
+  }
+  const matches = text.match(pattern)
+  if (!matches) {
+    note("fail", `${relative}: block not found for ${pattern}`)
+    return
+  }
+  if (matches.length > 1) {
+    note("fail", `${relative}: block matched ${matches.length} times, expected 1`)
+    return
+  }
+  if (!CHECK) await writeFile(file, text.replace(pattern, () => replacement))
+  note("ok", relative)
+}
+
 async function copyInto(source: string, relative: string) {
   const target = join(ROOT, relative)
   const from = join(DUMONT_DIR, source)
@@ -542,6 +571,65 @@ await patch("packages/ui/src/components/favicon.tsx", [
 ])
 
 // ---------------------------------------------------------------------------
+// 3b. The OAuth callback page. Every dev sees this on their first provider
+// login, in a browser, at the moment they are deciding whether this is a real
+// product. It lives in packages/core, so it is compiled into the engine binary
+// and the CLI wrap cannot reach it: only this fork can.
+//
+// The strings appear TWICE: once rendered server-side, and again inside the
+// inline <script> that rewrites the card when the callback resolves. Patching
+// only the server-side copies leaves the browser showing "OpenCode" the moment
+// the page updates itself, which is the half anyone actually reads.
+// ---------------------------------------------------------------------------
+await patch("packages/core/src/oauth/page.ts", [
+  [
+    `// The visual language mirrors the OpenCode app: the design tokens are a curated`,
+    `// The visual language mirrors the ${PRODUCT.prod.name} app: the design tokens are a curated`,
+  ],
+  // Server-rendered success and error cards.
+  [
+    `      message: provider ? \`OpenCode is now connected to \${escapeHtml(provider)}.\` : "OpenCode is now authorized.",`,
+    `      message: provider
+        ? \`${PRODUCT.prod.name} is now connected to \${escapeHtml(provider)}.\`
+        : "${PRODUCT.prod.name} is now authorized.",`,
+  ],
+  [
+    `        ? \`OpenCode couldn't finish connecting to \${escapeHtml(provider)}.\`
+        : "OpenCode couldn't complete authorization.",`,
+    `        ? \`${PRODUCT.prod.name} couldn't finish connecting to \${escapeHtml(provider)}.\`
+        : "${PRODUCT.prod.name} couldn't complete authorization.",`,
+  ],
+  [
+    `      footnote: "Close this window and try again from OpenCode.",`,
+    `      footnote: "Close this window and try again from ${PRODUCT.prod.name}.",`,
+  ],
+  [`    <title>\${escapeHtml(input.title)} · OpenCode</title>`, `    <title>\${escapeHtml(input.title)} · ${PRODUCT.prod.name}</title>`],
+  // The same copy again, inside the client-side script.
+  [
+    `message.textContent=PROVIDER?("OpenCode couldn't finish connecting to "+PROVIDER+"."):"OpenCode couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from OpenCode."}`,
+    `message.textContent=PROVIDER?("${PRODUCT.prod.name} couldn't finish connecting to "+PROVIDER+"."):"${PRODUCT.prod.name} couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from ${PRODUCT.prod.name}."}`,
+  ],
+  [
+    `message.textContent=PROVIDER?("OpenCode is now connected to "+PROVIDER+"."):"OpenCode is now authorized.";`,
+    `message.textContent=PROVIDER?("${PRODUCT.prod.name} is now connected to "+PROVIDER+"."):"${PRODUCT.prod.name} is now authorized.";`,
+  ],
+])
+
+// Upstream's wordmark is 234x42 and is letters only, so 19px tall gives ~13px
+// glyphs. The Dumont lockup is 4:1 and includes the winged D, so at the same
+// height the letters come out half that and the brand moment reads as a
+// afterthought. 28px matches upstream's optical letter size and overall width.
+await patch("packages/core/src/oauth/page.ts", [
+  [`  .brand svg { height: 19px; width: auto; }`, `  .brand svg { height: 28px; width: auto; }`],
+])
+
+await patchBlock(
+  "packages/core/src/oauth/page.ts",
+  /\/\/ OpenCode wordmark[\s\S]*?\nconst WORDMARK = `[\s\S]*?`\n/,
+  await readFile(join(DUMONT_DIR, "assets/oauth-wordmark.txt"), "utf8"),
+)
+
+// ---------------------------------------------------------------------------
 // 4. Deep links: accept dumontcode:// as well as opencode://.
 // ---------------------------------------------------------------------------
 await patch("packages/app/src/pages/layout/deep-links.ts", [
@@ -639,6 +727,22 @@ for (const channel of Object.keys(PRODUCT)) {
   }
   note("ok", `packages/desktop/icons/${channel}`)
 }
+
+// ---------------------------------------------------------------------------
+// 6b. Version. Dumont ships its own builds off an upstream base, so the version
+// carries both: 1.18.32-dumont.1 is a semver prerelease of 1.18.32, which sorts
+// above upstream 1.18.31 and so is what electron-updater compares with semver.gt.
+//
+// UPSTREAM_BASE is deliberately literal. When upstream moves, this edit FAILS,
+// which forces whoever merges to pick the next Dumont version rather than
+// silently shipping a build whose number says nothing about what is in it.
+// ---------------------------------------------------------------------------
+const UPSTREAM_BASE = "1.18.31"
+export const DUMONT_VERSION = "1.18.32-dumont.1"
+
+await patch("packages/desktop/package.json", [
+  [`  "version": "${UPSTREAM_BASE}",`, `  "version": "${DUMONT_VERSION}",`],
+])
 
 // ---------------------------------------------------------------------------
 // 7. Metadata: package identity and the Linux AppStream blurb.
