@@ -66,7 +66,14 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
             keybind={command.keybindParts("model.choose")}
             model={props.controller.model.selection}
             providerID={props.controller.model.selection.current()?.provider?.id}
-            modelName={props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
+            modelName={
+              ((selected) =>
+                selected?.name
+                  ? selected.provider?.id === "opencode"
+                    ? `Zen ${selected.name}`
+                    : selected.name
+                  : language.t("dialog.model.select.title"))(props.controller.model.selection.current())
+            }
             onClose={props.controller.restoreFocus}
             onUnpaidClick={() =>
               dialog.show(() => <DialogSelectModelUnpaidV2 model={props.controller.model.selection} />)

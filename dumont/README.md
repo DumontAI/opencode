@@ -148,6 +148,65 @@ Assets it installs:
   with `./dumont/tools/build-icons.sh` only when the brand art changes; the
   output is committed so applying branding stays fast.
 
+## The Dumont layer
+
+Branding without this is a skin. The app reads config from `~/.config/opencode`
+and `~/.opencode` and never `~/.config/dumont-code`, so a branded build has no
+team config, memory, permissions or skills. `dumont/assets/dumont-env.ts` is the
+fix, merged into `preferAppEnv` in `packages/desktop/src/main/server.ts` before
+the server sidecar is forked (`createSidecarEnv` copies the whole `process.env`,
+so it reaches the server).
+
+It does two things, both optional, both no-ops when the files are absent:
+
+- sets `OPENCODE_CONFIG_DIR` to `~/.config/dumont-code` when that directory exists
+- loads `~/.config/dumont/llm-keys.env` into the environment
+
+**Does `OPENCODE_CONFIG_DIR` break a dev's own `~/.config/opencode`?** No, and
+this is worth knowing rather than assuming. In `ConfigPaths.directories` the env
+var is **appended** to the directory list, after `Global.Path.config` and any
+project `.opencode` dirs, and the loader merges directories in order. So a dev's
+own global config still loads and still applies; Dumont's config is merged last
+and wins only where the two actually conflict. The one real side effect is that
+`loadGlobal` skips seeding `~/.config/opencode/opencode.json` with its `$schema`
+stub while the var is set, which costs editor autocomplete in a file that may not
+exist yet. That is why matching the CLI shim is safe here.
+
+The keys file is **parsed, never sourced**: `export KEY=value` lines, comments and
+blanks, one layer of quotes stripped. Running it through a shell to read three
+keys would be a remote-execution shaped hole for no benefit, and
+`dumont-env.test.ts` asserts a command substitution comes back as literal text.
+Values are never logged, only key names.
+
+Dumont's values are merged **after** the probed shell environment, so the team's
+keys file wins over a drifted shell profile. That matches `bin/dumont-code`,
+which sources the file unconditionally before exec'ing the engine.
+
+Note that upstream does probe the login shell (`$SHELL -il -c 'env -0'` in
+`shell-env.ts`), so on a machine whose `.zshrc` already sources the keys file the
+provider keys do arrive even without this. Relying on that is the mistake: the
+probe has a 5 second timeout, is skipped entirely for nushell, and depends on a
+dev's shell profile rather than on anything the team controls.
+
+### Why the first message came back Unauthorized
+
+With no `model` in config, `defaultModel()` in `packages/app/src/context/local.tsx`
+walks the connected providers in whatever order the server returns and takes the
+first model of the first one. That was `opencode`, which is **OpenCode Zen**,
+sst's own routed gateway. It is always advertised, nobody has funded it, so the
+first message hung and then returned `api_error: Unauthorized`.
+
+Zen is now moved to the back of that walk and picked only when it is the only
+thing connected. **No model is hardcoded**, which keeps the CLI config's
+deliberate "the model is a runtime choice" stance. Upstream already special-cases
+Zen in `useProviders().paid()` for the same reason.
+
+The picker itself already groups by provider, so the two `deepseek-v4-flash`
+entries do sit under different headings. The composer button did not: it showed
+the bare model name. It now prefixes Zen selections with `Zen `. Zen is the only
+provider worth labelling there, and not as a special case: it is a router, so
+every model name it offers collides with the direct provider's own name.
+
 ## Bump against upstream
 
 ```bash

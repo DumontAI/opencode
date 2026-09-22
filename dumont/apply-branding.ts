@@ -342,6 +342,86 @@ const isDeepLink = (value: string) => PROTOCOL_SCHEMES.some((scheme) => value.st
 
 await patch("packages/desktop/src/main/windows.ts", [[`    title: "OpenCode",`, `    title: "${PRODUCT.prod.name}",`]])
 
+// ---------------------------------------------------------------------------
+// The Dumont layer. Branding without this is a skin: no team config, memory,
+// permissions or skills, and no provider keys, because a Finder-launched app has
+// no shell. See dumont/assets/dumont-env.ts.
+// ---------------------------------------------------------------------------
+await copyInto("assets/dumont-env.ts", "packages/desktop/src/main/dumont-env.ts")
+await copyInto("assets/dumont-env.test.ts", "packages/desktop/src/main/dumont-env.test.ts")
+
+await patch("packages/desktop/src/main/server.ts", [
+  [
+    `import { getUserShell, loadShellEnv } from "./shell-env"`,
+    `import { dumontEnv } from "./dumont-env"
+import { getUserShell, loadShellEnv } from "./shell-env"`,
+  ],
+  [
+    `  Object.assign(process.env, {
+    ...shellEnv,
+    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",`,
+    `  Object.assign(process.env, {
+    ...shellEnv,
+    // After shellEnv so the team's keys file wins over a drifted shell profile,
+    // which is what bin/dumont-code does by sourcing it before exec.
+    ...dumontEnv(getLogger()),
+    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",`,
+  ],
+])
+
+// The model picker already groups by provider, so the two "deepseek-v4-flash"
+// entries do sit under different headings. The composer button does not: it shows
+// the bare model name, which is where the two became indistinguishable.
+//
+// Zen is the only provider worth calling out there, and not as a special case:
+// it is a router, so every model name it offers collides with the direct
+// provider's name. Labelling every provider would add noise without adding
+// information.
+await patch("packages/app/src/components/prompt-input-v2.tsx", [
+  [
+    `            modelName={props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}`,
+    `            modelName={
+              ((selected) =>
+                selected?.name
+                  ? selected.provider?.id === "opencode"
+                    ? \`Zen \${selected.name}\`
+                    : selected.name
+                  : language.t("dialog.model.select.title"))(props.controller.model.selection.current())
+            }`,
+  ],
+])
+
+// The bug Carlos hit on the published build: with no model in config, the app
+// walks the connected providers in whatever order the server returns them and
+// takes the first model of the first one. That was "opencode", which is OpenCode
+// Zen, sst's own paid gateway. It is always listed, nobody has funded it, so the
+// first message came back `api_error: Unauthorized` after a long hang.
+//
+// Zen is not removed, just moved to the back: pick it only when it is the only
+// thing connected. No model is hardcoded, which keeps the deliberate "the model
+// is a runtime choice" stance of the CLI config. Upstream already treats Zen as
+// a special case in useProviders().paid() for the same reason.
+await patch("packages/app/src/context/local.tsx", [
+  [
+    `    const defaultModel = () => {
+      const defaults = providers.default()
+      for (const provider of providers.connected()) {`,
+    `    const defaultModel = () => {
+      const defaults = providers.default()
+      const candidates = [...providers.connected()]
+      const usable = candidates.filter((provider) => provider.id !== ZEN_PROVIDER_ID)
+      for (const provider of usable.length > 0 ? usable : candidates) {`,
+  ],
+  [
+    `export const { use: useLocal, provider: LocalProvider } = createSimpleContext({`,
+    `// OpenCode Zen. A routed gateway that is always advertised and needs its own
+// funding, so it must never be the automatic first choice.
+const ZEN_PROVIDER_ID = "opencode"
+
+export const { use: useLocal, provider: LocalProvider } = createSimpleContext({`,
+  ],
+])
+
 // Cross-arch builds. Upstream's "opencode:node-pty-narrower" plugin rewrites
 // `@lydell/node-pty` to the concrete `@lydell/node-pty-<platform>-<arch>` package
 // using the BUILD MACHINE's process.arch, which bakes the host arch into the

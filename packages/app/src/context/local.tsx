@@ -56,6 +56,10 @@ const clone = (value: State | undefined) => {
   } satisfies State
 }
 
+// OpenCode Zen. A routed gateway that is always advertised and needs its own
+// funding, so it must never be the automatic first choice.
+const ZEN_PROVIDER_ID = "opencode"
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
@@ -163,7 +167,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const defaultModel = () => {
       const defaults = providers.default()
-      for (const provider of providers.connected()) {
+      const candidates = [...providers.connected()]
+      const usable = candidates.filter((provider) => provider.id !== ZEN_PROVIDER_ID)
+      for (const provider of usable.length > 0 ? usable : candidates) {
         const configured = defaults[provider.id]
         if (configured) {
           const model = { providerID: provider.id, modelID: configured }
