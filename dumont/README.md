@@ -272,9 +272,27 @@ later.
 
 ## Distribution
 
+**Published 2026-09-22, v1.18.31.**
+
+| | |
+|---|---|
+| Apple silicon | `https://dumont.au/desktop/code/DumontCode-latest-arm64.dmg` |
+| Intel | `https://dumont.au/desktop/code/DumontCode-latest-intel.dmg` |
+| Updater feed | `https://dumont.au/desktop/code/prod/latest-mac.yml` |
+| Release notes | `https://dumont.au/desktop/code/changelog.json` |
+
+`dumont.au` uses Cloudflare for DNS but the record is **DNS-only, not proxied**:
+it resolves straight to hel1 and Caddy serves the bytes, with no `cf-ray` or
+`cf-cache-status` on the response. That is the right shape here, because it side
+steps the "republished assets need `?v=`, no purge token" problem that has bitten
+other Dumont assets: a new build at the same URL is served immediately. It also
+means hel1 serves every download directly, with no CDN in front.
+
 Mirrors the Dumont Chat precedent: downloads are served from Dumont's own domain,
 not GitHub. On hel1 (`airbase-hel1`, 77.42.6.34), under
-`/opt/dumont-website/desktop/code/`:
+`/opt/dumont-website/desktop/code/`. Note `desktop/` itself is root-owned, from
+when Dumont Chat created it, so `publish-mac.sh` creates `code/` once with sudo
+and chowns it to `deploy`; everything after that needs no sudo:
 
 ```
 prod/dumont-code-desktop-mac-arm64.dmg

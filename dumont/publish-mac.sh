@@ -55,7 +55,17 @@ for arch in arm64 x64; do
   }
 done
 
-ssh "$host" "mkdir -p $remote/prod/$version"
+# /opt/dumont-website/desktop is root-owned (Dumont Chat created it), and we ssh
+# as deploy, so the code/ tree has to be created once with sudo and handed over.
+# Everything after this runs as deploy with no sudo. Idempotent.
+ssh "$host" "
+  set -e
+  if [ ! -d $remote ]; then
+    sudo mkdir -p $remote
+    sudo chown deploy:deploy $remote
+  fi
+  mkdir -p $remote/prod/$version
+"
 scp "${artefacts[@]/#/$dist/}" "$host:$remote/prod/$version/"
 scp "$root/dumont/changelog.json" "$host:$remote/changelog.json"
 
