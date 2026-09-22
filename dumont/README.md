@@ -338,7 +338,14 @@ later.
 
 ## Distribution
 
-**Published 2026-09-22, v1.18.31.**
+**Published 2026-09-22, v1.18.32-dumont.1.** The v1 -> v2 updater test passed:
+an installed 1.18.31 found the new version, downloaded
+`https://dumont.au/desktop/code/prod/dumont-code-desktop-mac-arm64.zip`, installed
+in place and relaunched as Dumont Code / `ai.dumont.code` / 1.18.32-dumont.1,
+still `accepted / Notarized Developer ID` with the ticket stapled and zero
+`sst/opencode` strings. `auth.json` came through byte-identical and the session
+database grew rather than shrank. Nothing upstream-branded reached the disk, which
+is the Dumont Chat failure this whole arrangement exists to prevent.
 
 | | |
 |---|---|
