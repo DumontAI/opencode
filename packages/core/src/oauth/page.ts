@@ -50,6 +50,21 @@ export function error(detail: string, options?: CallbackPageOptions) {
   })
 }
 
+export function expired(options?: CallbackPageOptions) {
+  const provider = options?.provider
+  return renderDocument({
+    title: "Sign-in link expired",
+    body: renderCard({
+      status: "expired",
+      headline: "This sign-in link has expired",
+      message: provider
+        ? `This link can no longer connect Dumont Code to ${escapeHtml(provider)}.`
+        : "This link can no longer connect Dumont Code.",
+      footnote: "Return to Dumont Code and start a new sign-in attempt.",
+    }),
+  })
+}
+
 export interface BootstrapOptions {
   /** Same-origin path the in-browser script POSTs the parsed callback to. */
   tokenPath: string
@@ -77,7 +92,7 @@ export function bootstrap(options: BootstrapOptions) {
 
 export * as OauthCallbackPage from "./page"
 
-type Status = "pending" | "success" | "error"
+type Status = "pending" | "success" | "error" | "expired"
 
 function renderCard(input: { status: Status; headline: string; message: string; detail?: string; footnote: string }) {
   const detail = input.detail?.trim()
@@ -87,6 +102,7 @@ function renderCard(input: { status: Status; headline: string; message: string; 
         <span class="icon icon-pending">${ICON_SPINNER}</span>
         <span class="icon icon-success">${ICON_CHECK}</span>
         <span class="icon icon-error">${ICON_CROSS}</span>
+        <span class="icon icon-expired">${ICON_CLOCK}</span>
       </div>
       <h1 class="headline" id="oc-headline">${escapeHtml(input.headline)}</h1>
       <p class="message" id="oc-message">${input.message}</p>
@@ -163,6 +179,7 @@ const LIGHT_VARS = `
     --oc-icon-weak: #dbdbdb;
     --oc-success: #2dba26;
     --oc-error: #ed4831;
+    --oc-expired: #a86610;
     --oc-detail-bg: #fff8f6;
     --oc-detail-border: #fdc3b7;
     --oc-shadow: 0 16px 48px -6px rgba(0,0,0,.10), 0 6px 12px -2px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.06);`
@@ -179,6 +196,7 @@ const DARK_VARS = `
     --oc-icon-weak: #343434;
     --oc-success: #12c905;
     --oc-error: #fc533a;
+    --oc-expired: #e8a647;
     --oc-detail-bg: #28110c;
     --oc-detail-border: #6a1206;
     --oc-shadow: 0 16px 48px -6px rgba(0,0,0,.55), 0 6px 12px -2px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.4);`
@@ -222,9 +240,11 @@ const STYLES = `
   .icon svg { display: block; }
   .card[data-status="pending"] .icon-pending,
   .card[data-status="success"] .icon-success,
-  .card[data-status="error"] .icon-error { display: block; }
+  .card[data-status="error"] .icon-error,
+  .card[data-status="expired"] .icon-expired { display: block; }
   .icon-success { color: var(--oc-success); }
   .icon-error { color: var(--oc-error); }
+  .icon-expired { color: var(--oc-expired); }
   .icon-pending { color: var(--oc-text-weak); }
   .headline { margin: 0; font-size: 1.1875rem; font-weight: 500; line-height: 1.3; letter-spacing: -0.012em; color: var(--oc-text-strong); }
   .message { margin: 0.5rem 0 0; font-size: 0.9375rem; color: var(--oc-text-base); }
@@ -308,5 +328,7 @@ const WORDMARK = `<svg class="wordmark" xmlns="http://www.w3.org/2000/svg" viewB
 const ICON_CHECK = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.4 2.4 4.6-5.4" /></svg>`
 
 const ICON_CROSS = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6m0-6-6 6" /></svg>`
+
+const ICON_CLOCK = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>`
 
 const ICON_SPINNER = `<svg class="spinner" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.2" /><path d="M21 12a9 9 0 0 0-9-9" /></svg>`
