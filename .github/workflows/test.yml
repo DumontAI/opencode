@@ -22,15 +22,16 @@ env:
 
 jobs:
   unit:
+    if: github.repository == 'anomalyco/opencode' || github.event_name == 'workflow_dispatch'
     name: unit (${{ matrix.settings.name }})
     strategy:
       fail-fast: false
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-24.04
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-2025
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -48,6 +49,20 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+
+      - name: Install ripgrep for Windows core tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = '15.1.0'
+          $name = "ripgrep-$version-x86_64-pc-windows-msvc"
+          $archive = Join-Path $env:RUNNER_TEMP 'ripgrep.zip'
+          $dest = Join-Path $env:RUNNER_TEMP 'ripgrep'
+          Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$name.zip" -OutFile $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $dest
+          $bin = Join-Path $dest $name
+          & (Join-Path $bin 'rg.exe') --version
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Configure git identity
         run: |
@@ -80,15 +95,16 @@ jobs:
         run: bun run test:httpapi
 
   e2e:
+    if: github.repository == 'anomalyco/opencode' || github.event_name == 'workflow_dispatch'
     name: e2e (${{ matrix.settings.name }})
     strategy:
       fail-fast: false
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-24.04
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-2025
     runs-on: ${{ matrix.settings.host }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers

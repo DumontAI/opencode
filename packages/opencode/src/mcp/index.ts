@@ -904,7 +904,18 @@ const layer = Layer.effect(
         }),
       )
 
-      const code = yield* Effect.promise(() => callbackPromise)
+      const code = yield* Effect.promise(() => callbackPromise).pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const pending = pendingOAuthTransports.get(mcpName)
+            pendingOAuthTransports.delete(mcpName)
+            yield* Effect.promise(() => pending?.transport.close() ?? Promise.resolve()).pipe(Effect.ignore)
+            yield* auth.clearOAuthState(mcpName)
+            yield* auth.clearCodeVerifier(mcpName)
+            return yield* Effect.failCause(cause)
+          }),
+        ),
+      )
 
       const storedState = yield* auth.getOAuthState(mcpName)
       if (storedState !== result.oauthState) {

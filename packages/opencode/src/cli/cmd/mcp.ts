@@ -11,6 +11,7 @@ import { UI } from "../ui"
 import { MCP } from "../../mcp"
 import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
+import { McpOAuthCallback, OAuthCallbackTimeoutError } from "../../mcp/oauth-callback"
 import { Config } from "@/config/config"
 import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -253,25 +254,27 @@ export const McpAuthCommand = effectCmd({
       prompts.log.warn(`${serverName} has expired credentials. Re-authenticating...`)
     }
 
-    const spinner = prompts.spinner()
-    spinner.start("Starting OAuth flow...")
+    for (;;) {
+      const spinner = prompts.spinner()
+      spinner.start("Starting OAuth flow...")
+      let timedOut = false
 
-    yield* MCP.Service.use((mcp) =>
-      mcp.authenticate(serverName, (url) => {
-        spinner.stop("Authorize in your browser:")
-        prompts.log.info(url)
-        spinner.start("Waiting for authorization...")
-      }),
-    ).pipe(
-      Effect.tap((status) =>
-        Effect.sync(() => {
-          if (status.status === "connected") {
-            spinner.stop("Authentication successful!")
-          } else if (status.status === "needs_client_registration") {
-            spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-            prompts.log.info("Add clientId to your MCP server config:")
-            prompts.log.info(`
+      yield* MCP.Service.use((mcp) =>
+        mcp.authenticate(serverName, (url) => {
+          spinner.stop("Authorize in your browser:")
+          prompts.log.info(url)
+          spinner.start("Waiting for authorization...")
+        }),
+      ).pipe(
+        Effect.tap((status) =>
+          Effect.sync(() => {
+            if (status.status === "connected") {
+              spinner.stop("Authentication successful!")
+            } else if (status.status === "needs_client_registration") {
+              spinner.stop("Authentication failed", 1)
+              prompts.log.error(status.error)
+              prompts.log.info("Add clientId to your MCP server config:")
+              prompts.log.info(`
   "mcp": {
     "${serverName}": {
       "type": "remote",
@@ -282,22 +285,44 @@ export const McpAuthCommand = effectCmd({
       }
     }
   }`)
-          } else if (status.status === "failed") {
+            } else if (status.status === "failed") {
+              spinner.stop("Authentication failed", 1)
+              prompts.log.error(status.error)
+            } else {
+              spinner.stop("Unexpected status: " + status.status, 1)
+            }
+          }),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            const error = Cause.squash(cause)
+            if (error instanceof OAuthCallbackTimeoutError) {
+              timedOut = true
+              spinner.stop("Sign-in link expired", 1)
+              return
+            }
             spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-          } else {
-            spinner.stop("Unexpected status: " + status.status, 1)
-          }
-        }),
-      ),
-      Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          spinner.stop("Authentication failed", 1)
-          const error = Cause.squash(cause)
-          prompts.log.error(error instanceof Error ? error.message : String(error))
-        }),
-      ),
-    )
+            prompts.log.error(error instanceof Error ? error.message : String(error))
+          }),
+        ),
+      )
+
+      if (!timedOut) break
+      const retry = yield* Effect.promise(() =>
+        prompts.confirm({ message: "This sign-in link has expired. Try again with a new link?" }),
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            const error = Cause.squash(cause)
+            prompts.log.error(error instanceof Error ? error.message : String(error))
+            return false
+          }),
+        ),
+      )
+      if (prompts.isCancel(retry) || !retry) break
+    }
+
+    yield* Effect.promise(() => McpOAuthCallback.stop())
 
     prompts.outro("Done")
   }),

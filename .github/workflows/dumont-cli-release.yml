@@ -1,0 +1,124 @@
+name: Dumont CLI release
+
+on:
+  push:
+    tags:
+      - "dumont-cli-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dumont-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'DumontAI/opencode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
+
+      - name: Verify OAuth callback tests and types
+        run: |
+          (cd packages/core && bun test test/oauth-page.test.ts)
+          cd packages/opencode
+          bun test --timeout 30000 test/mcp/oauth-callback.test.ts
+          bun run typecheck
+
+      - name: Build CLI for Linux and macOS
+        env:
+          OPENCODE_VERSION: ${{ github.ref_name }}
+          OPENCODE_CHANNEL: latest
+        run: |
+          set -euo pipefail
+          version="${OPENCODE_VERSION#dumont-cli-v}"
+          if [ "$version" = "$OPENCODE_VERSION" ]; then exit 1; fi
+          cd packages/opencode
+          OPENCODE_VERSION="$version" bun run script/build.ts
+
+      - name: Package and checksum CLI assets
+        run: |
+          set -euo pipefail
+          cd packages/opencode/dist
+          for dir in opencode-linux-*; do
+            tar -C "$dir/bin" -czf "$dir.tar.gz" opencode
+          done
+          for dir in opencode-darwin-*; do
+            (cd "$dir/bin" && zip -q "../../$dir.zip" opencode)
+          done
+          sha256sum opencode-linux-*.tar.gz opencode-darwin-*.zip > SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dumont-cli-assets
+          path: |
+            packages/opencode/dist/opencode-linux-*.tar.gz
+            packages/opencode/dist/opencode-darwin-*.zip
+            packages/opencode/dist/SHA256SUMS
+          if-no-files-found: error
+
+  verify:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            asset: opencode-linux-x64-baseline.tar.gz
+          - runner: ubuntu-24.04-arm
+            asset: opencode-linux-arm64.tar.gz
+          - runner: macos-latest
+            asset: opencode-darwin-arm64.zip
+          - runner: macos-15-intel
+            asset: opencode-darwin-x64-baseline.zip
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dumont-cli-assets
+          path: release-assets
+      - name: Verify checksum and execute native binary
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          if [ "$(uname -s)" = Darwin ]; then
+            actual="$(shasum -a 256 "$ASSET" | cut -d' ' -f1)"
+          else
+            actual="$(sha256sum "$ASSET" | cut -d' ' -f1)"
+          fi
+          expected="$(awk -v asset="$ASSET" '$2 == asset { print $1 }' SHA256SUMS)"
+          test -n "$expected" && test "$actual" = "$expected"
+          mkdir extracted
+          case "$ASSET" in
+            *.tar.gz) tar -xzf "$ASSET" -C extracted ;;
+            *.zip) unzip -q "$ASSET" -d extracted ;;
+          esac
+          test "$(extracted/opencode --version)" = "${GITHUB_REF_NAME#dumont-cli-v}"
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dumont-cli-assets
+          path: release-assets
+      - name: Publish verified release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          gh release create "$GITHUB_REF_NAME" \
+            opencode-linux-*.tar.gz opencode-darwin-*.zip SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest=false \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Dumont Code CLI build with an OAuth expiry page and safe retry for MCP sign-in."

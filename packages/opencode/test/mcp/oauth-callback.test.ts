@@ -1,6 +1,6 @@
 import { test, expect, describe, afterEach } from "bun:test"
 import { createConnection, createServer as createNetServer } from "net"
-import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { McpOAuthCallback, OAuthCallbackTimeoutError } from "../../src/mcp/oauth-callback"
 import { parseRedirectUri } from "../../src/mcp/oauth-provider"
 
 async function getFreeLoopbackPort(): Promise<number> {
@@ -110,5 +110,44 @@ describe("McpOAuthCallback.ensureRunning", () => {
 
     expect(await canConnect("127.0.0.1", port)).toBe(true)
     expect(await canConnect("::1", port)).toBe(false)
+  })
+
+  test("shows a branded expiry page for a late callback without accepting its code", async () => {
+    const port = await getFreeLoopbackPort()
+    const redirectUri = `http://127.0.0.1:${port}/custom/callback`
+    await McpOAuthCallback.ensureRunning(redirectUri)
+
+    await expect(McpOAuthCallback.waitForCallback("old-state", "Hangar", 10)).rejects.toBeInstanceOf(
+      OAuthCallbackTimeoutError,
+    )
+    expect(McpOAuthCallback.isRunning()).toBe(true)
+
+    const response = await fetch(`${redirectUri}?code=old-code&state=old-state`)
+    const body = await response.text()
+    expect(response.status).toBe(410)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(body).toContain("This sign-in link has expired")
+    expect(body).toContain("Hangar")
+    expect(body).not.toContain("old-code")
+    expect(McpOAuthCallback.isRunning()).toBe(false)
+  })
+
+  test("keeps a fresh attempt valid when an old link returns", async () => {
+    const port = await getFreeLoopbackPort()
+    const redirectUri = `http://127.0.0.1:${port}/custom/callback`
+    await McpOAuthCallback.ensureRunning(redirectUri)
+
+    await expect(McpOAuthCallback.waitForCallback("old-state", "Hangar", 10)).rejects.toBeInstanceOf(
+      OAuthCallbackTimeoutError,
+    )
+    const current = McpOAuthCallback.waitForCallback("new-state", "Hangar")
+    const stale = await fetch(`${redirectUri}?error=access_denied&state=old-state`)
+    expect(stale.status).toBe(410)
+    expect(McpOAuthCallback.isRunning()).toBe(true)
+
+    const fresh = await fetch(`${redirectUri}?code=new-code&state=new-state`)
+    expect(fresh.status).toBe(200)
+    expect(await current).toBe("new-code")
+    expect(McpOAuthCallback.isRunning()).toBe(false)
   })
 })
