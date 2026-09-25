@@ -59,7 +59,15 @@ runs:
         # e.g. ./patches/ for standard-openapi
         # https://github.com/oven-sh/bun/issues/28147
         if [ "$RUNNER_OS" = "Windows" ]; then
-          bun install --linker hoisted ${{ inputs.install-flags }}
+          BUN_INSTALL_LOG="$RUNNER_TEMP/bun-install.log"
+          if bun install --linker hoisted ${{ inputs.install-flags }} 2>&1 | tee "$BUN_INSTALL_LOG"; then
+            :
+          elif grep -q 'ENOTEMPTY:.*patch_hash=' "$BUN_INSTALL_LOG"; then
+            echo 'Bun patch cache collision on Windows; retrying install once'
+            bun install --linker hoisted ${{ inputs.install-flags }}
+          else
+            exit 1
+          fi
         else
           bun install ${{ inputs.install-flags }}
         fi

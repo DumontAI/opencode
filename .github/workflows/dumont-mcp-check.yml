@@ -1,0 +1,50 @@
+name: Dumont MCP check
+
+on:
+  pull_request:
+    branches:
+      - dumont
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oauth:
+    if: github.repository == 'DumontAI/opencode'
+    name: OAuth (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
+
+      - name: Test OAuth page and callback
+        run: |
+          (cd packages/core && bun test test/oauth-page.test.ts)
+          (cd packages/opencode && bun test --timeout 30000 test/mcp/oauth-callback.test.ts)
+
+      - name: Typecheck MCP client package
+        working-directory: packages/opencode
+        run: bun run typecheck
+
+      - name: Build and smoke-test Linux CLI
+        if: runner.os == 'Linux'
+        working-directory: packages/opencode
+        env:
+          OPENCODE_VERSION: 1.18.31-dumont.1
+          OPENCODE_CHANNEL: latest
+        run: |
+          bun run script/build.ts --single --skip-install --skip-embed-web-ui
+          test "$(dist/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_VERSION"
