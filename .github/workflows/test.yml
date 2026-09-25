@@ -49,6 +49,20 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      - name: Install ripgrep for Windows core tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = '15.1.0'
+          $name = "ripgrep-$version-x86_64-pc-windows-msvc"
+          $archive = Join-Path $env:RUNNER_TEMP 'ripgrep.zip'
+          $dest = Join-Path $env:RUNNER_TEMP 'ripgrep'
+          Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$name.zip" -OutFile $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $dest
+          $bin = Join-Path $dest $name
+          & (Join-Path $bin 'rg.exe') --version
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
+
       - name: Configure git identity
         run: |
           git config --global user.email "bot@opencode.ai"
