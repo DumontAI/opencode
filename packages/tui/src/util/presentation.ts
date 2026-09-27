@@ -1,5 +1,11 @@
+// Dumont: same wordmark as the home screen (dumont-code plugin/dumont-brand.tsx).
 const logo = {
-  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
+  left: [
+    "   ▄                       █ ",
+    "█▀▀█ █  █ █▀▄▀█ █▀▀█ █▀▀▄ ▀█▀",
+    "█__█ █__█ █_█_█ █__█ █__█ _█_",
+    "▀▀▀▀ ▀▀▀▀ ▀ ▀ ▀ ▀▀▀▀ ▀~~▀  ▀▀",
+  ],
   right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
 }
 
@@ -32,7 +38,7 @@ export function sessionEpilogue(input: { title: string; sessionID?: string }) {
     ...wordmark("  "),
     "",
     `  ${weak("Session")}${bold}${input.title}${reset}`,
-    `  ${weak("Continue")}${bold}opencode -s ${input.sessionID}${reset}`,
+    `  ${weak("Continue")}${bold}dumont-code -s ${input.sessionID}${reset}`,
     "",
   ].join("\n")
 }
