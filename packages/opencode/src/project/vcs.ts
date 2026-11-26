@@ -278,6 +278,58 @@ export class PatchApplyError extends Schema.TaggedErrorClass<PatchApplyError>()(
   reason: Schema.Literals(["non-git", "not-clean"]),
 }) {}
 
+export const ActionOperation = Schema.Literals(["commit", "merge", "fetch"])
+export type ActionOperation = Schema.Schema.Type<typeof ActionOperation>
+
+export const ActionReason = Schema.Literals([
+  "non-git",
+  "no-changes",
+  "dirty",
+  "merge-in-progress",
+  "conflicts",
+  "failed",
+])
+export type ActionReason = Schema.Schema.Type<typeof ActionReason>
+
+export class ActionError extends Schema.TaggedErrorClass<ActionError>()("VcsActionError", {
+  operation: ActionOperation,
+  reason: ActionReason,
+  message: Schema.String,
+}) {}
+
+export const SyncInfo = Schema.Struct({
+  branch: Schema.optional(Schema.String),
+  upstream: Schema.optional(Schema.String),
+  base: Schema.optional(Schema.String),
+  ahead: Schema.Finite,
+  behind: Schema.Finite,
+  dirty: Schema.Finite,
+  conflicts: Schema.Finite,
+  merging: Schema.Boolean,
+}).annotate({ identifier: "VcsSyncInfo" })
+export type SyncInfo = Schema.Schema.Type<typeof SyncInfo>
+
+export const CommitInput = Schema.Struct({
+  message: Schema.String,
+})
+export type CommitInput = Schema.Schema.Type<typeof CommitInput>
+
+export const CommitResult = Schema.Struct({
+  commit: Schema.String,
+})
+export type CommitResult = Schema.Schema.Type<typeof CommitResult>
+
+export const MergeInput = Schema.Struct({
+  base: Schema.optional(Schema.String),
+})
+export type MergeInput = Schema.Schema.Type<typeof MergeInput>
+
+export const MergeResult = Schema.Struct({
+  base: Schema.String,
+  conflicts: Schema.Array(Schema.String),
+})
+export type MergeResult = Schema.Schema.Type<typeof MergeResult>
+
 export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly branch: () => Effect.Effect<string | undefined>
@@ -286,6 +338,10 @@ export interface Interface {
   readonly diff: (mode: Mode, options?: DiffOptions) => Effect.Effect<FileDiff[]>
   readonly diffRaw: () => Effect.Effect<string>
   readonly apply: (input: ApplyInput) => Effect.Effect<ApplyResult, PatchApplyError>
+  readonly sync: () => Effect.Effect<SyncInfo>
+  readonly commit: (input: CommitInput) => Effect.Effect<CommitResult, ActionError>
+  readonly merge: (input: MergeInput) => Effect.Effect<MergeResult, ActionError>
+  readonly fetch: () => Effect.Effect<SyncInfo, ActionError>
 }
 
 interface State {
@@ -334,6 +390,191 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
         return value
       }),
     )
+
+    const conflictCodes = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"])
+    const failMessage = (result: Git.Result) =>
+      result.stderr.toString("utf8").trim() || result.text().trim() || "git command failed"
+
+    const resolveBase = Effect.fn("Vcs.resolveBase")(function* () {
+      const ctx = yield* InstanceState.context
+      if (ctx.project.vcs !== "git") return
+
+      const [branch, upstream, primary, root] = yield* Effect.all(
+        [
+          git.branch(ctx.directory),
+          git.upstream(ctx.directory),
+          git.primaryRemote(ctx.directory),
+          git.defaultBranch(ctx.directory),
+        ],
+        { concurrency: 4 },
+      )
+
+      const staging = primary ? `${primary}/staging` : "origin/staging"
+      const upstreamName = upstream && upstream.includes("/") ? upstream.slice(upstream.indexOf("/") + 1) : undefined
+      const stable = branch === "staging" || branch === "main" || branch === "master"
+
+      if (!stable) {
+        if (yield* git.refExists(ctx.directory, staging)) return staging
+        if (upstream && upstreamName !== branch) return upstream
+      } else if (upstream) {
+        return upstream
+      }
+
+      if (root) {
+        const remote = primary ? `${primary}/${root.name}` : undefined
+        if (remote && (yield* git.refExists(ctx.directory, remote))) return remote
+        return root.ref
+      }
+
+      return upstream
+    })
+
+    const sync = Effect.fn("Vcs.sync")(function* () {
+      const ctx = yield* InstanceState.context
+      const empty = { ahead: 0, behind: 0, dirty: 0, conflicts: 0, merging: false }
+      if (ctx.project.vcs !== "git") return empty
+
+      const [branch, upstream, base, status, merging] = yield* Effect.all(
+        [
+          git.branch(ctx.directory),
+          git.upstream(ctx.directory),
+          resolveBase(),
+          git.status(ctx.directory),
+          git.isMerging(ctx.directory),
+        ],
+        { concurrency: 5 },
+      )
+      const counts = base ? yield* git.aheadBehind(ctx.directory, base) : { ahead: 0, behind: 0 }
+
+      return {
+        branch,
+        upstream,
+        base,
+        ahead: counts.ahead,
+        behind: counts.behind,
+        dirty: status.length,
+        conflicts: status.filter((item) => conflictCodes.has(item.code)).length,
+        merging,
+      } satisfies SyncInfo
+    })
+
+    const commit = Effect.fn("Vcs.commit")(function* (input: CommitInput) {
+      const ctx = yield* InstanceState.context
+      if (ctx.project.vcs !== "git") {
+        return yield* new ActionError({
+          operation: "commit",
+          reason: "non-git",
+          message: "Changes can't be committed because the project is not git-based",
+        })
+      }
+
+      const message = input.message.trim()
+      if (!message) {
+        return yield* new ActionError({
+          operation: "commit",
+          reason: "failed",
+          message: "Commit message is required",
+        })
+      }
+
+      const added = yield* git.addAll(ctx.directory)
+      if (added.exitCode !== 0) {
+        return yield* new ActionError({ operation: "commit", reason: "failed", message: failMessage(added) })
+      }
+      if (!(yield* git.hasStaged(ctx.directory))) {
+        return yield* new ActionError({
+          operation: "commit",
+          reason: "no-changes",
+          message: "There are no changes to commit",
+        })
+      }
+
+      const result = yield* git.commit(ctx.directory, message)
+      if (result.exitCode !== 0) {
+        return yield* new ActionError({ operation: "commit", reason: "failed", message: failMessage(result) })
+      }
+
+      const hash = yield* git.head(ctx.directory)
+      return { commit: hash?.slice(0, 12) ?? "" }
+    })
+
+    const merge = Effect.fn("Vcs.merge")(function* (input: MergeInput) {
+      const ctx = yield* InstanceState.context
+      if (ctx.project.vcs !== "git") {
+        return yield* new ActionError({
+          operation: "merge",
+          reason: "non-git",
+          message: "Branches can't be merged because the project is not git-based",
+        })
+      }
+
+      const base = input.base?.trim() || (yield* resolveBase())
+      if (!base) {
+        return yield* new ActionError({
+          operation: "merge",
+          reason: "failed",
+          message: "No base branch to merge",
+        })
+      }
+      if (yield* git.isMerging(ctx.directory)) {
+        return yield* new ActionError({
+          operation: "merge",
+          reason: "merge-in-progress",
+          message: "A merge is already in progress",
+        })
+      }
+
+      const status = yield* git.status(ctx.directory)
+      if (status.length > 0) {
+        return yield* new ActionError({
+          operation: "merge",
+          reason: "dirty",
+          message: "Commit your changes before merging",
+        })
+      }
+      if (!(yield* git.refExists(ctx.directory, base))) {
+        return yield* new ActionError({
+          operation: "merge",
+          reason: "failed",
+          message: `Base branch ${base} was not found`,
+        })
+      }
+
+      const result = yield* git.merge(ctx.directory, base)
+      if (result.exitCode === 0) return { base, conflicts: [] }
+
+      const after = yield* git.status(ctx.directory)
+      const conflicts = after.filter((item) => conflictCodes.has(item.code)).map((item) => item.file)
+      if (conflicts.length > 0) return { base, conflicts }
+
+      return yield* new ActionError({ operation: "merge", reason: "failed", message: failMessage(result) })
+    })
+
+    const fetch = Effect.fn("Vcs.fetch")(function* () {
+      const ctx = yield* InstanceState.context
+      if (ctx.project.vcs !== "git") {
+        return yield* new ActionError({
+          operation: "fetch",
+          reason: "non-git",
+          message: "Branches can't be fetched because the project is not git-based",
+        })
+      }
+
+      const base = yield* resolveBase()
+      if (base) {
+        const separator = base.indexOf("/")
+        const remote = separator === -1 ? yield* git.primaryRemote(ctx.directory) : base.slice(0, separator)
+        const branch = separator === -1 ? base : base.slice(separator + 1)
+        if (remote && branch) {
+          const result = yield* git.fetchBranch(ctx.directory, { remote, branch })
+          if (result.exitCode !== 0) {
+            return yield* new ActionError({ operation: "fetch", reason: "failed", message: failMessage(result) })
+          }
+        }
+      }
+
+      return yield* sync()
+    })
 
     return Service.of({
       init: Effect.fn("Vcs.init")(function* () {
@@ -414,6 +655,10 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
         }
         return { applied: true }
       }),
+      sync,
+      commit,
+      merge,
+      fetch,
     })
   }),
 )

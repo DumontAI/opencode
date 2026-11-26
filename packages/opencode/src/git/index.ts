@@ -1,6 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess } from "@opencode-ai/core/process"
-import { Effect, Layer, Context, Stream } from "effect"
+import { Effect, Layer, Context, Stream, Duration } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 
 const cfg = [
@@ -70,6 +70,7 @@ export interface Options {
   readonly env?: Record<string, string>
   readonly maxOutputBytes?: number
   readonly stdin?: ChildProcess.CommandInput
+  readonly timeout?: Duration.Input
 }
 
 export interface Interface {
@@ -88,6 +89,17 @@ export interface Interface {
   readonly patchUntracked: (cwd: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly statUntracked: (cwd: string, file: string) => Effect.Effect<Stat | undefined>
   readonly applyPatch: (cwd: string, patch: string) => Effect.Effect<Result>
+  readonly upstream: (cwd: string) => Effect.Effect<string | undefined>
+  readonly aheadBehind: (cwd: string, base: string, head?: string) => Effect.Effect<{ ahead: number; behind: number }>
+  readonly isMerging: (cwd: string) => Effect.Effect<boolean>
+  readonly refExists: (cwd: string, ref: string) => Effect.Effect<boolean>
+  readonly primaryRemote: (cwd: string) => Effect.Effect<string | undefined>
+  readonly head: (cwd: string) => Effect.Effect<string | undefined>
+  readonly addAll: (cwd: string) => Effect.Effect<Result>
+  readonly hasStaged: (cwd: string) => Effect.Effect<boolean>
+  readonly commit: (cwd: string, message: string) => Effect.Effect<Result>
+  readonly merge: (cwd: string, base: string) => Effect.Effect<Result>
+  readonly fetchBranch: (cwd: string, input: { remote: string; branch: string }) => Effect.Effect<Result>
 }
 
 const kind = (code: string): Kind => {
@@ -118,7 +130,7 @@ const layer = Layer.effect(
             stdout: "pipe",
             stderr: "pipe",
           }),
-          { maxOutputBytes: opts.maxOutputBytes },
+          { maxOutputBytes: opts.maxOutputBytes, timeout: opts.timeout },
         )
         return {
           exitCode: result.exitCode,
@@ -323,6 +335,71 @@ const layer = Layer.effect(
       return yield* run(["apply", "-"], { cwd, stdin: stdin(patch) })
     })
 
+    const upstream = Effect.fn("Git.upstream")(function* (cwd: string) {
+      const result = yield* run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd })
+      if (result.exitCode !== 0) return
+      return out(result) || undefined
+    })
+
+    const aheadBehind = Effect.fn("Git.aheadBehind")(function* (cwd: string, base: string, head = "HEAD") {
+      const result = yield* run(["rev-list", "--left-right", "--count", `${base}...${head}`], { cwd })
+      if (result.exitCode !== 0) return { ahead: 0, behind: 0 }
+      const [behind, ahead] = out(result)
+        .split(/\s+/)
+        .map((value) => Number.parseInt(value, 10))
+      return {
+        ahead: Number.isFinite(ahead) ? ahead : 0,
+        behind: Number.isFinite(behind) ? behind : 0,
+      }
+    })
+
+    const isMerging = Effect.fn("Git.isMerging")(function* (cwd: string) {
+      const result = yield* run(["rev-parse", "--quiet", "--verify", "MERGE_HEAD"], { cwd })
+      return result.exitCode === 0
+    })
+
+    const refExists = Effect.fn("Git.refExists")(function* (cwd: string, ref: string) {
+      const result = yield* run(["rev-parse", "--quiet", "--verify", ref], { cwd })
+      return result.exitCode === 0
+    })
+
+    const primaryRemote = Effect.fn("Git.primaryRemote")(function* (cwd: string) {
+      return yield* primary(cwd)
+    })
+
+    const head = Effect.fn("Git.head")(function* (cwd: string) {
+      const result = yield* run(["rev-parse", "HEAD"], { cwd })
+      if (result.exitCode !== 0) return
+      return out(result) || undefined
+    })
+
+    const addAll = Effect.fn("Git.addAll")(function* (cwd: string) {
+      return yield* run(["add", "-A", "--", "."], { cwd })
+    })
+
+    const hasStaged = Effect.fn("Git.hasStaged")(function* (cwd: string) {
+      const result = yield* run(["diff", "--cached", "--quiet"], { cwd })
+      return result.exitCode === 1
+    })
+
+    const commit = Effect.fn("Git.commit")(function* (cwd: string, message: string) {
+      return yield* run(["commit", "-m", message], { cwd })
+    })
+
+    const merge = Effect.fn("Git.merge")(function* (cwd: string, base: string) {
+      return yield* run(["merge", "--no-edit", base], { cwd })
+    })
+
+    const fetchBranch = Effect.fn("Git.fetchBranch")(function* (
+      cwd: string,
+      input: { remote: string; branch: string },
+    ) {
+      return yield* run(
+        ["fetch", "--prune", input.remote, `+refs/heads/${input.branch}:refs/remotes/${input.remote}/${input.branch}`],
+        { cwd, timeout: "30 seconds" },
+      )
+    })
+
     return Service.of({
       run,
       branch,
@@ -339,6 +416,17 @@ const layer = Layer.effect(
       patchUntracked,
       statUntracked,
       applyPatch,
+      upstream,
+      aheadBehind,
+      isMerging,
+      refExists,
+      primaryRemote,
+      head,
+      addAll,
+      hasStaged,
+      commit,
+      merge,
+      fetchBranch,
     })
   }),
 )

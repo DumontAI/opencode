@@ -70,10 +70,13 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
+import { shouldQueueFollowup } from "@/pages/session/composer/followup-queue"
+import { shouldOfferPlanBuild } from "@/pages/session/composer/plan-build"
 import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
+import { ReviewActions } from "@/pages/session/review-actions"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -1351,7 +1354,12 @@ export default function Page() {
   const reviewPanelV2 = () => (
     <div class="flex flex-col h-full overflow-hidden bg-v2-background-bg-base contain-strict">
       <Show when={reviewPanelV2Rendered()}>
-        <ReviewPanelV2 {...reviewPanelV2Props()} />
+        <Show when={!nogit()}>
+          <ReviewActions onRepositoryChanged={refreshVcs} sessionTitle={info()?.title} />
+        </Show>
+        <div class="flex-1 min-h-0">
+          <ReviewPanelV2 {...reviewPanelV2Props()} />
+        </div>
       </Show>
     </div>
   )
@@ -1364,6 +1372,9 @@ export default function Page() {
         "bg-background-stronger": !settings.general.newLayoutDesigns(),
       }}
     >
+      <Show when={!nogit()}>
+        <ReviewActions onRepositoryChanged={refreshVcs} sessionTitle={info()?.title} />
+      </Show>
       <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
         {reviewContent({
           diffStyle: layout.review.diffStyle(),
@@ -1754,7 +1765,12 @@ export default function Page() {
   const queueEnabled = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return settings.general.followup() === "queue" && busy(id) && !composer.blocked() && !isChildSession()
+    return shouldQueueFollowup({
+      followup: settings.general.followup(),
+      busy: busy(id),
+      blocked: composer.blocked(),
+      child: isChildSession(),
+    })
   })
 
   const followupText = (item: FollowupDraft) => {
@@ -1793,6 +1809,48 @@ export default function Page() {
 
     return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
   }
+
+  const planBuild = createMemo(() => {
+    const id = params.id
+    if (!id) return
+    const last = messages().at(-1)
+    if (!last) return
+
+    const offer = shouldOfferPlanBuild({
+      lastRole: last.role,
+      agent: last.role === "assistant" ? last.agent : undefined,
+      completed: last.role === "assistant" && !!last.time.completed,
+      busy: busy(id),
+      blocked: composer.blocked(),
+      child: isChildSession(),
+    })
+    if (!offer) return
+    if (queuedFollowups().length > 0) return
+
+    return {
+      onBuild: () => {
+        const user = lastUserMessage()
+        if (!user || user.role !== "user") return
+        const text = "The plan has been approved, you can now edit files. Execute the plan."
+        inputController().agents.select("build")
+        void sendFollowupDraft({
+          api: sdk().api.session,
+          sync: sync(),
+          serverSync: serverSync(),
+          draft: {
+            sessionID: id,
+            sessionDirectory: sdk().directory,
+            prompt: [{ type: "text", content: text, start: 0, end: text.length }],
+            context: [],
+            agent: "build",
+            model: { providerID: user.model.providerID, modelID: user.model.modelID },
+            variant: user.model.variant ?? undefined,
+          },
+          optimisticBusy: true,
+        })
+      },
+    }
+  })
 
   const editFollowup = (id: string) => {
     const sessionID = params.id
@@ -2150,6 +2208,7 @@ export default function Page() {
                     onEdit: editFollowup,
                   }
                 : undefined,
+            planBuild: planBuild,
             revert: () =>
               rolled().length > 0
                 ? {

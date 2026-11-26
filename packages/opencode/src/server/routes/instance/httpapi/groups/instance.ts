@@ -40,6 +40,18 @@ export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsAp
   { httpApiStatus: 400 },
 ) {}
 
+export class ApiVcsActionError extends Schema.ErrorClass<ApiVcsActionError>("VcsActionError")(
+  {
+    name: Schema.Literal("VcsActionError"),
+    data: Schema.Struct({
+      operation: Vcs.ActionOperation,
+      reason: Vcs.ActionReason,
+      message: Schema.String,
+    }),
+  },
+  { httpApiStatus: 400 },
+) {}
+
 export const InstancePaths = {
   dispose: "/instance/dispose",
   path: "/path",
@@ -48,6 +60,10 @@ export const InstancePaths = {
   vcsDiff: "/vcs/diff",
   vcsDiffRaw: "/vcs/diff/raw",
   vcsApply: "/vcs/apply",
+  vcsSync: "/vcs/sync",
+  vcsCommit: "/vcs/commit",
+  vcsMerge: "/vcs/merge",
+  vcsFetch: "/vcs/fetch",
   command: "/command",
   agent: "/agent",
   skill: "/skill",
@@ -134,6 +150,52 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "vcs.apply",
             summary: "Apply VCS patch",
             description: "Apply a raw patch to the current working tree.",
+          }),
+        ),
+        HttpApiEndpoint.get("vcsSync", InstancePaths.vcsSync, {
+          query: WorkspaceRoutingQuery,
+          success: described(Vcs.SyncInfo, "VCS sync state"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "vcs.sync",
+            summary: "Get VCS sync state",
+            description: "Retrieve the current branch, base branch, ahead and behind counts, and working tree state.",
+          }),
+        ),
+        HttpApiEndpoint.post("vcsCommit", InstancePaths.vcsCommit, {
+          query: WorkspaceRoutingQuery,
+          payload: Vcs.CommitInput,
+          success: described(Vcs.CommitResult, "VCS commit"),
+          error: ApiVcsActionError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "vcs.commit",
+            summary: "Commit VCS changes",
+            description: "Stage all working tree changes in the current directory and create a commit.",
+          }),
+        ),
+        HttpApiEndpoint.post("vcsMerge", InstancePaths.vcsMerge, {
+          query: WorkspaceRoutingQuery,
+          payload: Vcs.MergeInput,
+          success: described(Vcs.MergeResult, "VCS merge"),
+          error: ApiVcsActionError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "vcs.merge",
+            summary: "Merge a base branch",
+            description:
+              "Merge the requested base branch into the current branch. Refuses when the working tree is dirty.",
+          }),
+        ),
+        HttpApiEndpoint.post("vcsFetch", InstancePaths.vcsFetch, {
+          query: WorkspaceRoutingQuery,
+          success: described(Vcs.SyncInfo, "VCS sync state after fetch"),
+          error: ApiVcsActionError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "vcs.fetch",
+            summary: "Fetch the base branch",
+            description: "Fetch the resolved base branch from its remote and return the updated sync state.",
           }),
         ),
         HttpApiEndpoint.get("command", InstancePaths.command, {

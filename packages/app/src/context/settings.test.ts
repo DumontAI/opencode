@@ -10,6 +10,8 @@ import {
   resolveNewLayoutDesigns,
   shouldDisplayTabsToast,
   shouldEnableNewLayout,
+  followupDefault,
+  normalizeFollowup,
 } from "./settings"
 
 describe("agent visibility", () => {
@@ -92,5 +94,17 @@ describe("layout transition", () => {
     expect(shouldEnableNewLayout("1.17.20", "1.17.21")).toBe(false)
     expect(shouldEnableNewLayout(undefined, "1.17.19")).toBe(false)
     expect(shouldEnableNewLayout("dev", "1.17.20")).toBe(false)
+  })
+})
+
+describe("follow-up behavior", () => {
+  test("defaults to queue", () => {
+    expect(followupDefault).toBe("queue")
+    expect(normalizeFollowup(undefined)).toBe("queue")
+  })
+
+  test("preserves an explicit choice", () => {
+    expect(normalizeFollowup("queue")).toBe("queue")
+    expect(normalizeFollowup("steer")).toBe("steer")
   })
 })

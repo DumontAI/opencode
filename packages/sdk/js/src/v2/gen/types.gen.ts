@@ -2339,6 +2339,26 @@ export type VcsApplyError = {
   }
 }
 
+export type VcsSyncInfo = {
+  branch?: string
+  upstream?: string
+  base?: string
+  ahead: number
+  behind: number
+  dirty: number
+  conflicts: number
+  merging: boolean
+}
+
+export type VcsActionError = {
+  name: "VcsActionError"
+  data: {
+    operation: "commit" | "merge" | "fetch"
+    reason: "non-git" | "no-changes" | "dirty" | "merge-in-progress" | "conflicts" | "failed"
+    message: string
+  }
+}
+
 export type Command = {
   name: string
   description?: string
@@ -8285,6 +8305,127 @@ export type VcsApplyResponses = {
 }
 
 export type VcsApplyResponse = VcsApplyResponses[keyof VcsApplyResponses]
+
+export type VcsSyncData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/vcs/sync"
+}
+
+export type VcsSyncErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type VcsSyncError = VcsSyncErrors[keyof VcsSyncErrors]
+
+export type VcsSyncResponses = {
+  /**
+   * VCS sync state
+   */
+  200: VcsSyncInfo
+}
+
+export type VcsSyncResponse = VcsSyncResponses[keyof VcsSyncResponses]
+
+export type VcsCommitData = {
+  body?: {
+    message: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/vcs/commit"
+}
+
+export type VcsCommitErrors = {
+  /**
+   * VcsActionError | InvalidRequestError
+   */
+  400: VcsActionError | InvalidRequestError
+}
+
+export type VcsCommitError = VcsCommitErrors[keyof VcsCommitErrors]
+
+export type VcsCommitResponses = {
+  /**
+   * VCS commit
+   */
+  200: {
+    commit: string
+  }
+}
+
+export type VcsCommitResponse = VcsCommitResponses[keyof VcsCommitResponses]
+
+export type VcsMergeData = {
+  body?: {
+    base?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/vcs/merge"
+}
+
+export type VcsMergeErrors = {
+  /**
+   * VcsActionError | InvalidRequestError
+   */
+  400: VcsActionError | InvalidRequestError
+}
+
+export type VcsMergeError = VcsMergeErrors[keyof VcsMergeErrors]
+
+export type VcsMergeResponses = {
+  /**
+   * VCS merge
+   */
+  200: {
+    base: string
+    conflicts: Array<string>
+  }
+}
+
+export type VcsMergeResponse = VcsMergeResponses[keyof VcsMergeResponses]
+
+export type VcsFetchData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/vcs/fetch"
+}
+
+export type VcsFetchErrors = {
+  /**
+   * VcsActionError | InvalidRequestError
+   */
+  400: VcsActionError | InvalidRequestError
+}
+
+export type VcsFetchError = VcsFetchErrors[keyof VcsFetchErrors]
+
+export type VcsFetchResponses = {
+  /**
+   * VCS sync state after fetch
+   */
+  200: VcsSyncInfo
+}
+
+export type VcsFetchResponse = VcsFetchResponses[keyof VcsFetchResponses]
 
 export type CommandListData = {
   body?: never

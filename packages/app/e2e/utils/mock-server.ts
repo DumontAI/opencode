@@ -14,6 +14,10 @@ export interface MockServerConfig {
   sessions: ({ id: string } & Record<string, unknown>)[]
   pageMessages: (sessionId: string, limit: number, before?: string) => { items: unknown[]; cursor?: string }
   vcsDiff?: unknown[]
+  vcsSync?: unknown | (() => unknown)
+  vcsFetch?: () => unknown
+  vcsCommit?: (body: unknown) => unknown
+  vcsMerge?: (body: unknown) => unknown
   messageDelay?: number
   beforeMessagesResponse?: (input: { sessionID: string; before?: string }) => Promise<void>
   onMessages?: (input: { sessionID: string; before?: string; phase: "start" | "end" }) => void
@@ -99,6 +103,23 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
         typeof config.sessionStatus === "function" ? config.sessionStatus() : (config.sessionStatus ?? {}),
       )
     if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)
+    const vcsSync = () =>
+      (typeof config.vcsSync === "function" ? config.vcsSync() : config.vcsSync) ?? {
+        branch: "main",
+        base: "origin/main",
+        ahead: 0,
+        behind: 0,
+        dirty: 0,
+        conflicts: 0,
+        merging: false,
+      }
+    if (path === "/vcs/sync" && route.request().method() === "GET") return json(route, vcsSync())
+    if (path === "/vcs/fetch" && route.request().method() === "POST")
+      return json(route, config.vcsFetch?.() ?? vcsSync())
+    if (path === "/vcs/commit" && route.request().method() === "POST")
+      return json(route, config.vcsCommit?.(route.request().postDataJSON()) ?? { commit: "e2e000000000" })
+    if (path === "/vcs/merge" && route.request().method() === "POST")
+      return json(route, config.vcsMerge?.(route.request().postDataJSON()) ?? { base: "origin/main", conflicts: [] })
     if (path === "/file" && config.fileList)
       return json(route, await config.fileList(url.searchParams.get("path") ?? ""))
     if (path === "/file/content" && config.fileContent)

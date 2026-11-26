@@ -9,7 +9,7 @@ import { Skill } from "@/skill"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ApiVcsApplyError } from "../groups/instance"
+import { ApiVcsActionError, ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
@@ -73,6 +73,32 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       )
     })
 
+    const toApiActionError = (error: Vcs.ActionError) =>
+      new ApiVcsActionError({
+        name: "VcsActionError",
+        data: {
+          operation: error.operation,
+          reason: error.reason,
+          message: error.message,
+        },
+      })
+
+    const getVcsSync = Effect.fn("InstanceHttpApi.vcsSync")(function* () {
+      return yield* vcs.sync()
+    })
+
+    const commitVcs = Effect.fn("InstanceHttpApi.vcsCommit")(function* (ctx: { payload: Vcs.CommitInput }) {
+      return yield* vcs.commit(ctx.payload).pipe(Effect.mapError(toApiActionError))
+    })
+
+    const mergeVcs = Effect.fn("InstanceHttpApi.vcsMerge")(function* (ctx: { payload: Vcs.MergeInput }) {
+      return yield* vcs.merge(ctx.payload).pipe(Effect.mapError(toApiActionError))
+    })
+
+    const fetchVcs = Effect.fn("InstanceHttpApi.vcsFetch")(function* () {
+      return yield* vcs.fetch().pipe(Effect.mapError(toApiActionError))
+    })
+
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
       return yield* command.list()
     })
@@ -101,6 +127,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("vcsDiff", getVcsDiff)
       .handle("vcsDiffRaw", getVcsDiffRaw)
       .handle("vcsApply", applyVcs)
+      .handle("vcsSync", getVcsSync)
+      .handle("vcsCommit", commitVcs)
+      .handle("vcsMerge", mergeVcs)
+      .handle("vcsFetch", fetchVcs)
       .handle("command", getCommand)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
