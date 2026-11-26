@@ -14,6 +14,11 @@ export type SessionComposerFollowupDock = {
   onEdit: (id: string) => void
 }
 
+export type SessionComposerPlanBuildDock = {
+  onBuild: () => void
+  disabled?: boolean
+}
+
 export type SessionComposerRevertDock = {
   items: { id: string; text: string }[]
   restoring?: string
@@ -33,6 +38,7 @@ export function createSessionComposerRegionController(input: {
     onToggle: () => void
   }
   followup: Accessor<SessionComposerFollowupDock | undefined>
+  planBuild: Accessor<SessionComposerPlanBuildDock | undefined>
   revert: Accessor<SessionComposerRevertDock | undefined>
   onResponseSubmit: () => void
   openParent: () => void
@@ -124,6 +130,7 @@ export function createSessionComposerRegionController(input: {
     centered: input.centered,
     todo: input.todo,
     followup: input.followup,
+    planBuild: input.planBuild,
     revert: input.revert,
     onResponseSubmit: input.onResponseSubmit,
     openParent: input.openParent,

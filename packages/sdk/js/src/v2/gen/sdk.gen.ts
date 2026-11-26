@@ -387,14 +387,22 @@ import type {
   V2SkillListResponses,
   VcsApplyErrors,
   VcsApplyResponses,
+  VcsCommitErrors,
+  VcsCommitResponses,
   VcsDiffErrors,
   VcsDiffRawErrors,
   VcsDiffRawResponses,
   VcsDiffResponses,
+  VcsFetchErrors,
+  VcsFetchResponses,
   VcsGetErrors,
   VcsGetResponses,
+  VcsMergeErrors,
+  VcsMergeResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  VcsSyncErrors,
+  VcsSyncResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -2147,6 +2155,140 @@ export class Vcs extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get VCS sync state
+   *
+   * Retrieve the current branch, base branch, ahead and behind counts, and working tree state.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<VcsSyncResponses, VcsSyncErrors, ThrowOnError>({
+      url: "/vcs/sync",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Commit VCS changes
+   *
+   * Stage all working tree changes in the current directory and create a commit.
+   */
+  public commit<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      message?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "message" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<VcsCommitResponses, VcsCommitErrors, ThrowOnError>({
+      url: "/vcs/commit",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Merge a base branch
+   *
+   * Merge the requested base branch into the current branch. Refuses when the working tree is dirty.
+   */
+  public merge<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      base?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "base" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<VcsMergeResponses, VcsMergeErrors, ThrowOnError>({
+      url: "/vcs/merge",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Fetch the base branch
+   *
+   * Fetch the resolved base branch from its remote and return the updated sync state.
+   */
+  public fetch<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<VcsFetchResponses, VcsFetchErrors, ThrowOnError>({
+      url: "/vcs/fetch",
+      ...options,
+      ...params,
     })
   }
 

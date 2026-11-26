@@ -333,3 +333,216 @@ describe("Vcs diff", () => {
     { git: true },
   )
 })
+
+// ---------------------------------------------------------------------------
+// VCS actions
+// ---------------------------------------------------------------------------
+
+const gitText = Effect.fn("VcsTest.gitText")(function* (cwd: string, args: string[]) {
+  const result = yield* Git.Service.use((git) => git.run(args, { cwd }))
+  if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString("utf8")}`)
+  return result.text().trim()
+})
+
+const cloneRemote = Effect.fn("VcsTest.cloneRemote")(function* (remote: string, branch: string) {
+  const root = yield* tmpdirScoped()
+  const dir = path.join(root, "clone")
+  yield* git(root, ["clone", remote, dir])
+  yield* git(dir, ["config", "user.email", "test@opencode.test"])
+  yield* git(dir, ["config", "user.name", "Test"])
+  yield* git(dir, ["checkout", branch])
+  return dir
+})
+
+const setupRemote = Effect.fn("VcsTest.setupRemote")(function* (cwd: string, file: string, content: string) {
+  yield* git(cwd, ["branch", "-M", "main"])
+  yield* write(path.join(cwd, file), content)
+  yield* git(cwd, ["add", "."])
+  yield* git(cwd, ["commit", "--no-gpg-sign", "-m", "base"])
+
+  const remoteRoot = yield* tmpdirScoped()
+  const remote = path.join(remoteRoot, "remote.git")
+  yield* git(remoteRoot, ["init", "--bare", remote])
+  yield* git(remote, ["symbolic-ref", "HEAD", "refs/heads/main"])
+  yield* git(cwd, ["remote", "add", "origin", remote])
+  yield* git(cwd, ["push", "-u", "origin", "main"])
+
+  return { remote, other: yield* cloneRemote(remote, "main") }
+})
+
+describe("Vcs actions", () => {
+  afterEach(async () => {
+    await disposeAllInstances()
+  })
+
+  it.instance(
+    "sync() reports ahead and behind against the base branch",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { other } = yield* setupRemote(test.directory, "base.txt", "base\n")
+
+        yield* git(test.directory, ["checkout", "-b", "feature"])
+        yield* write(path.join(test.directory, "feature.txt"), "feature\n")
+        yield* git(test.directory, ["add", "."])
+        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "feature"])
+
+        yield* write(path.join(other, "main.txt"), "main\n")
+        yield* git(other, ["add", "."])
+        yield* git(other, ["commit", "--no-gpg-sign", "-m", "main"])
+        yield* git(other, ["push", "origin", "main"])
+        yield* git(test.directory, ["fetch", "origin"])
+
+        const vcs = yield* init()
+        const sync = yield* vcs.sync()
+
+        expect(sync.branch).toBe("feature")
+        expect(sync.base).toBe("origin/main")
+        expect(sync.ahead).toBe(1)
+        expect(sync.behind).toBe(1)
+        expect(sync.dirty).toBe(0)
+        expect(sync.merging).toBe(false)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "fetch() updates the behind count from the remote",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { other } = yield* setupRemote(test.directory, "base.txt", "base\n")
+
+        yield* git(test.directory, ["checkout", "-b", "feature"])
+        yield* git(other, ["pull", "--ff-only", "origin", "main"])
+
+        const vcs = yield* init()
+        yield* vcs.sync()
+
+        yield* write(path.join(other, "later.txt"), "later\n")
+        yield* git(other, ["add", "."])
+        yield* git(other, ["commit", "--no-gpg-sign", "-m", "later"])
+        yield* git(other, ["push", "origin", "main"])
+
+        const before = yield* vcs.sync()
+        expect(before.behind).toBe(0)
+
+        const after = yield* vcs.fetch()
+        expect(after.base).toBe("origin/main")
+        expect(after.behind).toBe(1)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "commit() stages all changes and reports the commit",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* write(path.join(test.directory, "tracked.txt"), "one\n")
+        yield* git(test.directory, ["add", "."])
+        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "tracked"])
+
+        yield* write(path.join(test.directory, "tracked.txt"), "two\n")
+        yield* write(path.join(test.directory, "untracked.txt"), "new\n")
+
+        const vcs = yield* init()
+        const result = yield* vcs.commit({ message: "test: commit all changes" })
+
+        expect(result.commit).toMatch(/^[0-9a-f]{7,12}$/)
+        expect(yield* gitText(test.directory, ["log", "-1", "--pretty=%s"])).toBe("test: commit all changes")
+        expect(yield* gitText(test.directory, ["status", "--porcelain"])).toBe("")
+
+        const sync = yield* vcs.sync()
+        expect(sync.dirty).toBe(0)
+
+        const error = yield* vcs.commit({ message: "test: nothing left" }).pipe(Effect.flip)
+        expect(error.reason).toBe("no-changes")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "merge() merges the base branch when the tree is clean",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { other } = yield* setupRemote(test.directory, "file.txt", "base\n")
+
+        yield* git(test.directory, ["checkout", "-b", "feature"])
+        yield* write(path.join(test.directory, "feature.txt"), "feature\n")
+        yield* git(test.directory, ["add", "."])
+        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "feature"])
+
+        yield* write(path.join(other, "main.txt"), "main\n")
+        yield* git(other, ["add", "."])
+        yield* git(other, ["commit", "--no-gpg-sign", "-m", "main"])
+        yield* git(other, ["push", "origin", "main"])
+        yield* git(test.directory, ["fetch", "origin"])
+
+        const vcs = yield* init()
+        const before = yield* vcs.sync()
+        expect(before.behind).toBe(1)
+
+        const result = yield* vcs.merge({})
+        expect(result.base).toBe("origin/main")
+        expect(result.conflicts).toEqual([])
+
+        const after = yield* vcs.sync()
+        expect(after.behind).toBe(0)
+        expect(after.ahead).toBeGreaterThanOrEqual(2)
+        expect(after.merging).toBe(false)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "merge() refuses to run with uncommitted changes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* write(path.join(test.directory, "dirty.txt"), "dirty\n")
+
+        const vcs = yield* init()
+        const error = yield* vcs.merge({}).pipe(Effect.flip)
+
+        expect(error.reason).toBe("dirty")
+        const sync = yield* vcs.sync()
+        expect(sync.merging).toBe(false)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "merge() reports conflicts and leaves the merge in progress",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { other } = yield* setupRemote(test.directory, "conflict.txt", "base\n")
+
+        yield* git(test.directory, ["checkout", "-b", "feature"])
+        yield* write(path.join(test.directory, "conflict.txt"), "feature\n")
+        yield* git(test.directory, ["add", "."])
+        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "feature"])
+
+        yield* write(path.join(other, "conflict.txt"), "main\n")
+        yield* git(other, ["add", "."])
+        yield* git(other, ["commit", "--no-gpg-sign", "-m", "main"])
+        yield* git(other, ["push", "origin", "main"])
+        yield* git(test.directory, ["fetch", "origin"])
+
+        const vcs = yield* init()
+        const result = yield* vcs.merge({})
+
+        expect(result.base).toBe("origin/main")
+        expect(result.conflicts).toContain("conflict.txt")
+
+        const sync = yield* vcs.sync()
+        expect(sync.merging).toBe(true)
+        expect(sync.conflicts).toBe(1)
+
+        yield* git(test.directory, ["merge", "--abort"])
+      }),
+    { git: true },
+  )
+})
