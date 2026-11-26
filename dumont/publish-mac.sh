@@ -68,6 +68,10 @@ ssh "$host" "
 "
 scp "${artefacts[@]/#/$dist/}" "$host:$remote/prod/$version/"
 scp "$root/dumont/changelog.json" "$host:$remote/changelog.json"
+# The page at https://dumont.au/desktop/code/ links to the DumontCode-latest-*
+# symlinks below, so it never names a version. Without it the URL people are
+# given is a 404 (Caddy has no directory listing).
+scp "$root/dumont/download/index.html" "$host:$remote/index.html"
 
 # The updater fetches <feed>/latest-mac.yml and resolves the file it names
 # relative to the same directory, so the feed and the zips have to sit together
@@ -84,6 +88,7 @@ ssh "$host" "
 echo "==> verifying every URL the app or a human can construct"
 fail=0
 urls=(
+  "$base/"
   "$base/changelog.json"
   "$base/prod/latest-mac.yml"
   "$base/prod/dumont-code-desktop-mac-arm64.zip"
