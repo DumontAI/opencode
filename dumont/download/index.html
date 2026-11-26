@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dumont Code for Mac</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+<style>
+  :root { --bg: #f7f6f2; --fg: #1c1b18; --muted: #6b6860; --line: #dcd9d0; --btn: #1c1b18; --btn-fg: #f7f6f2; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #15140f; --fg: #edeae2; --muted: #a29e93; --line: #34322b; --btn: #edeae2; --btn-fg: #15140f; }
+  }
+  :root[data-theme="dark"] { --bg: #15140f; --fg: #edeae2; --muted: #a29e93; --line: #34322b; --btn: #edeae2; --btn-fg: #15140f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 64px 16px; }
+  h1 { font: 500 2rem/1.2 Georgia, serif; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 24px; }
+  .btn { display: block; padding: 14px 18px; margin-bottom: 12px; border-radius: 8px; background: var(--btn); color: var(--btn-fg); text-decoration: none; font-weight: 600; }
+  .btn span { display: block; font-weight: 400; font-size: .875rem; opacity: .75; }
+  .alt { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  ol { color: var(--muted); padding-left: 20px; margin: 32px 0 0; }
+  small { display: block; margin-top: 32px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dumont Code for Mac</h1>
+  <p>The desktop app. <span id="version"></span></p>
+  <a class="btn" href="DumontCode-latest-arm64.dmg">Download for Apple Silicon<span>M1, M2, M3, M4 and newer</span></a>
+  <a class="btn alt" href="DumontCode-latest-intel.dmg">Download for Intel<span>Older Macs. Not yet tested on Intel hardware</span></a>
+  <ol>
+    <li>Open the downloaded file.</li>
+    <li>Drag Dumont Code into Applications.</li>
+    <li>Open it from Applications. It updates itself after that.</li>
+  </ol>
+  <small>Not sure which Mac you have? Apple menu &gt; About This Mac. "Chip: Apple M…" means Apple Silicon.</small>
+</main>
+<script>
+  fetch("changelog.json").then(r => r.json()).then(c => {
+    const tag = c.releases && c.releases[0] && c.releases[0].tag
+    if (tag) document.getElementById("version").textContent = "Version " + tag + "."
+  }).catch(() => {})
+</script>
+</body>
+</html>
